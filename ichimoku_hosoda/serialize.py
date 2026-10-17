@@ -52,6 +52,10 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
                    "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()}}
                   for w in res.waves if "不成立" not in w.note][:8],
         "waveform": res.waveform["form"] if res.waveform else None,
+        "p_value": ({"A": [_d(res.p_value["A"].date), _f(res.p_value["A"].price)],
+                     "B": [_d(res.p_value["B"].date), _f(res.p_value["B"].price)],
+                     "C": [_d(res.p_value["C"].date), _f(res.p_value["C"].price)],
+                     "P": _f(res.p_value["P"]), "P_down": _f(res.p_value["P_down"])} if res.p_value else None),
         "position": res.position.__dict__,
         "verdict": res.verdict(),
         "nbars": [{"label": s["label"], "current": {"sign": s["current"]["sign"], "len": s["current"]["len"],
