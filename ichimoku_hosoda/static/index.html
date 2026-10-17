@@ -56,7 +56,7 @@ details summary{cursor:pointer;color:var(--mute)}
 <header>
   <h1>一目均衡表 節目判定<small>細田哲生（三世一目山人）理論ベース</small></h1>
   <input id="code" placeholder="9201 / N225 / USDJPY" value="">
-  <select id="period"><option value="3y">3年</option><option value="6y" selected>6年</option><option value="10y">10年</option><option value="max">最大</option></select>
+  <select id="period" title="日足の期間（週足・月足もこの範囲から作成）"><option value="6mo">6か月</option><option value="1y">1年</option><option value="3y">3年</option><option value="6y" selected>6年</option></select>
   <button class="primary" id="go">分析</button>
   <label class="file">CSV を読む <input type="file" id="csv" accept=".csv,text/csv"></label>
   <span id="status">コードを入力して「分析」。動作確認は DEMO</span>
@@ -69,7 +69,7 @@ details summary{cursor:pointer;color:var(--mute)}
 <script>
 let DATA=null, FRAME='daily';
 const $=s=>document.querySelector(s);
-const fmt=v=>v==null?'-':v.toLocaleString('ja-JP',{maximumFractionDigits:1});
+const fmt=v=>v==null?'-':v.toLocaleString('ja-JP',{maximumFractionDigits:v<100?3:1});
 const st=(m,err)=>{const e=$('#status');e.textContent=m;e.className=err?'err':''};
 
 async function run(){
@@ -90,8 +90,9 @@ $('#csv').addEventListener('change',async e=>{
 });
 
 function render(){
-  const names={daily:'日足',weekly:'週足',monthly:'月足'};
-  $('#tabs').innerHTML=Object.keys(DATA.frames).map(k=>`<button class="${k===FRAME?'on':''}" data-k="${k}">${names[k]}</button>`).join('');
+  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足'};
+  const order=['m5','h1','daily','weekly','monthly'].filter(k=>DATA.frames[k]);
+  $('#tabs').innerHTML=order.map(k=>`<button class="${k===FRAME?'on':''}" data-k="${k}">${names[k]}</button>`).join('')+(DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k;render()});
   const F=DATA.frames[FRAME]; drawChart(F); drawSide(F);
 }

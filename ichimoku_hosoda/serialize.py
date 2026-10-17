@@ -20,11 +20,15 @@ def _f(v):
         return None
 
 
+_FMT = {"fmt": "%Y-%m-%d"}
+
+
 def _d(ts) -> str:
-    return pd.Timestamp(ts).strftime("%Y-%m-%d")
+    return pd.Timestamp(ts).strftime(_FMT["fmt"])
 
 
 def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
+    _FMT["fmt"] = "%m-%d %H:%M" if res.unit == "本" else "%Y-%m-%d"
     df = res.df.iloc[-bars:]
     L = res.L.loc[df.index[0]:]
     n = len(res.df)

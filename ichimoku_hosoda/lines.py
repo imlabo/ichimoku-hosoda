@@ -52,7 +52,23 @@ def _extend_index(idx: pd.DatetimeIndex, n: int) -> pd.DatetimeIndex:
     """足種を推定して n 本分の将来日付を補う（日足=営業日、週足=7日、月足=月末）。"""
     if len(idx) < 3:
         return idx
-    step = np.median(np.diff(idx.values).astype("timedelta64[D]").astype(int))
+    step_min = np.median(np.diff(idx.values).astype("timedelta64[m]").astype(int))
+    if step_min < 24 * 60:  # 分足・時間足: 直近に現れた「時刻の並び」を翌営業日以降に繰り返す
+        recent = idx[idx >= idx[-1].normalize() - pd.Timedelta(days=7)]
+        tod = sorted(set((t.hour, t.minute) for t in recent))
+        if not tod:
+            tod = [(idx[-1].hour, idx[-1].minute)]
+        fut, day, last = [], idx[-1].normalize(), idx[-1]
+        while len(fut) < n:
+            for h, m in tod:
+                t = day + pd.Timedelta(hours=h, minutes=m)
+                if t > last:
+                    fut.append(t)
+                    if len(fut) >= n:
+                        break
+            day = (day + pd.offsets.BDay(1)).normalize()
+        return idx.append(pd.DatetimeIndex(fut))
+    step = step_min / (24 * 60)
     if step <= 1.5:
         fut = pd.bdate_range(idx[-1], periods=n + 1)[1:]
     elif step <= 8:

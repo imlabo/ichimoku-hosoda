@@ -22,8 +22,15 @@ _cache: dict[tuple, tuple[float, dict]] = {}
 CACHE_SEC = 900
 
 
-def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60) -> dict:
-    out = {"name": name, "from": str(df.index[0].date()), "to": str(df.index[-1].date()), "bars": len(df), "frames": {}}
+def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict | None = None) -> dict:
+    out = {"name": name, "from": str(df.index[0].date()), "to": str(df.index[-1].date()), "bars": len(df), "frames": {},
+           "notes": []}
+    for key, (idf, label, zz) in (intraday or {}).items():
+        if idf is None or len(idf) < 80:
+            out["notes"].append(f"{label}: データ不足または取得不可")
+            continue
+        out["frames"][key] = result_to_json(
+            analyze(idf, label, "本", 60, nbar_specs=((3, "3本足"), (9, "9本足"), (26, "26本足")), zz_thresholds=zz), bars=400)
     out["frames"]["daily"] = result_to_json(
         analyze(df, "日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足"))), bars=320)
     if len(df) >= 60:
@@ -54,16 +61,30 @@ def plotly_js():
 
 
 @app.get("/api/analyze")
-def api_analyze(code: str, period: str = "6y", horizon: int = 60):
-    key = (code.strip().upper(), period, horizon)
+def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int = 1):
+    key = (code.strip().upper(), period, horizon, intraday)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SEC:
         return JSONResponse(hit[1])
+    demo = code.strip().upper() == "DEMO"
     try:
-        df = data.synthetic() if code.strip().upper() == "DEMO" else data.fetch(code, period=period)
+        df = data.synthetic() if demo else data.fetch(code, period=period)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"データ取得に失敗しました: {e}") from e
-    res = analyze_all(df, data.normalize_symbol(code), horizon)
+    if demo and period == "6mo":
+        df = df.iloc[-130:]
+    elif demo and period == "1y":
+        df = df.iloc[-250:]
+    intra = {}
+    if intraday:
+        for key2, interval, label, zz in (("m5", "5m", "5分足", (0.004, 0.008, 0.016, 0.03)),
+                                           ("h1", "1h", "1時間足", (0.01, 0.02, 0.04, 0.08))):
+            try:
+                idf = data.synthetic_intraday(interval) if demo else data.fetch_intraday(code, interval)
+            except Exception:  # noqa: BLE001
+                idf = None
+            intra[key2] = (idf, label, zz)
+    res = analyze_all(df, data.normalize_symbol(code), horizon, intra)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 
