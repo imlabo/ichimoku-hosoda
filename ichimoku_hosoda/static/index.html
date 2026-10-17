@@ -122,6 +122,11 @@ function drawChart(F){
   up.concat(dn).forEach(x=>{ if(x.price<ymin*0.97||x.price>ymax*1.05) return;
     shapes.push({type:'line',xref:'paper',x0:0.55,x1:1,y0:x.price,y1:x.price,line:{color:col[x.kinds.split('/')[0]]||'#555',width:1.2,dash:'longdash'}});
     ann.push({xref:'paper',x:0.56,y:x.price,text:`${x.kinds} ${fmt(x.price)}${x.n>1?' ×'+x.n:''}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col[x.kinds.split('/')[0]]||'#555'}})});
+  // 三波動の終了予測日 D（上位3波動、今後のもの）
+  const seenD=new Set();
+  F.waves.slice(0,3).forEach((w,wi)=>w.d_info.forEach(d=>{ if(!d.date||d.offset<0||d.offset>F.horizon_bars||seenD.has(d.date)) return; seenD.add(d.date);
+    shapes.push({type:'line',x0:d.date,x1:d.date,y0:ymin,y1:ymax,line:{color:'#0e7c86',width:1.4,dash:'dot'}});
+    ann.push({x:d.date,y:ymax-(ymax-ymin)*(0.02+0.06*(seenD.size%4)),text:`D${wi+1} ${d.rel}`,showarrow:false,textangle:-90,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',yanchor:'top'})}));
   // 主要な三波動 A→B→C を結ぶ
   if(F.waves.length){const w=F.waves[0]; traces.push({x:[w.A[0],w.B[0],w.C[0]],y:[w.A[1],w.B[1],w.C[1]],mode:'lines+markers+text',type:'scatter',name:'三波動 A-B-C',
     text:['A','B','C'],textposition:'middle right',textfont:{size:11,color:'#8a5a1e'},line:{color:'#8a5a1e',width:1.5},marker:{size:7,color:'#8a5a1e'},hovertemplate:'%{text} %{x}<br>%{y:,.1f}<extra></extra>'})}
@@ -138,7 +143,9 @@ function drawSide(F){
   const u=F.unit, c=F.close, u_=u;
   let h=`<div class="verdict"><strong>総合所見（暫定判断と検証条件）</strong><ul>${F.verdict.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
   h+=`<div class="muted">並び順: ${F.position.order}　／　直近波形: <b>${F.waveform||'-'}</b>　／　三役: ${F.position.sanyaku}</div>`;
-  h+=`<h2>時間の節目 ― 変化日候補</h2><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>主な根拠</th></tr>`+
+  h+=`<h2>三波動の終了予測日（D）</h2><div class="muted" style="margin-bottom:6px">第一波動 AB・第二波動 BC が決まれば、三波動目の時間は AB=BD／AB=CD／AC=CD で先に見積もれる。A〜D が基本数値になる日は特に重要。その日に高値（安値）となるか、反応なく続伸（延長）かを確認する。</div><table><tr><th>波動</th><th>A → B → C</th><th>関係</th><th>予測日 D</th><th class="num">あと</th><th class="num">A〜D</th></tr>`+
+    F.waves.slice(0,5).map((w,wi)=>w.d_info.map((d,di)=>`<tr${d.offset<0?' style="color:#999"':''}>${di===0?`<td rowspan="3"><b>D${wi+1}</b><br><span class="muted">${w.dir==='up'?'上げ':'下げ'}</span></td><td rowspan="3" class="muted">${w.A[0]} ${fmt(w.A[1])}<br>${w.B[0]} ${fmt(w.B[1])}<br>${w.C[0]} ${fmt(w.C[1])}<br>AB ${w.ab}・BC ${w.bc}・AC ${w.ac}${u}</td>`:''}<td>${d.rel}<br><span class="muted">${d.days}${u}</span></td><td class="num"><b>${d.date||'-'}</b></td><td class="num">${d.offset<0?`${-d.offset}${u}前（経過）`:d.offset===0?'本日':`+${d.offset}${u}`}</td><td class="num">${d.ad}${u}${d.ad_basic?`<br><span class="ok">≒基本数値 ${d.ad_basic}</span>`:''}</td></tr>`).join('')).join('')+'</table>';
+  h+=`<h2>時間の節目 ― 変化日候補（基本数値・対等数値・三波動・相場水準の重なり）</h2><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>主な根拠</th></tr>`+
     F.change_dates.slice(0,10).map(cd=>`<tr class="cd"><td class="num"><b>${cd.date}</b></td><td class="num">${cd.offset>0?'+':''}${cd.offset}</td><td class="num">${cd.score}</td><td>${cd.details.slice(0,3).map(d=>'・'+d).join('<br>')}${cd.n>3?`<br><span class="muted">…他 ${cd.n-3} 件</span>`:''}</td></tr>`).join('')+'</table>';
   const up=F.calc.filter(x=>x.price>c).slice(0,6).reverse(), dn=F.calc.filter(x=>x.price<=c).slice(-6).reverse();
   h+=`<h2>価格の節目 ― 計算値の集中</h2><table><tr><th class="num">値段</th><th class="num">現値比</th><th>種別</th><th>達成</th></tr>`+

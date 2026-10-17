@@ -29,7 +29,7 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
     L = res.L.loc[df.index[0]:]
     n = len(res.df)
     out = {
-        "label": res.label, "unit": res.unit,
+        "label": res.label, "unit": res.unit, "horizon_bars": res.horizon,
         "last_date": _d(df.index[-1]), "close": _f(df["Close"].iloc[-1]),
         "ohlc": {"date": [_d(d) for d in df.index],
                  "open": [_f(v) for v in df["Open"]], "high": [_f(v) for v in df["High"]],
@@ -49,7 +49,8 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "waves": [{"dir": w.direction, "A": [_d(w.A.date), _f(w.A.price)], "B": [_d(w.B.date), _f(w.B.price)],
                    "C": [_d(w.C.date), _f(w.C.price)], "ab": w.ab, "bc": w.bc, "ac": w.ac,
                    "calc": {k: _f(v) for k, v in w.calc.items()}, "achieved": w.achieved,
-                   "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()}}
+                   "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()},
+                   "d_info": [_dinfo(w, k, i, n, res) for k, i in w.d_dates.items()]}
                   for w in res.waves if "不成立" not in w.note][:8],
         "waveform": res.waveform["form"] if res.waveform else None,
         "p_value": ({"A": [_d(res.p_value["A"].date), _f(res.p_value["A"].price)],
@@ -68,3 +69,13 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
     for col in ("tenkan", "kijun", "span_tk", "span_52", "chikou"):
         out["lines"][col] = [_f(v) for v in L[col]]
     return out
+
+
+def _dinfo(w, rel, i, n, res):
+    from .numbers import nearest_basic
+    from .swings import bars_between
+    ad = bars_between(w.A.i, i)
+    nb = nearest_basic(ad)
+    return {"rel": rel, "date": _d(res.index_ext[i]) if i < len(res.index_ext) else None,
+            "offset": int(i - (n - 1)), "ad": ad, "ad_basic": nb[0] if nb else None,
+            "days": w.ab if rel != "AC=CD" else w.ac}
