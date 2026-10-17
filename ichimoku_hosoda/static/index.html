@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一目均衡表 節目判定</title>
+<script src="/static/plotly.min.js" charset="utf-8"></script>
+<style>
+:root{--bg:#f6f5f1;--panel:#fff;--ink:#1f2328;--mute:#6b7280;--line:#e5e2da;--acc:#8a5a1e;--up:#c0392b;--dn:#1f5f8b;--lv:#7d3c98;--cd:#b9770e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;font-size:14px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 18px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:16px;margin:0 14px 0 0;font-weight:600;letter-spacing:.02em}
+header h1 small{color:var(--mute);font-weight:400;margin-left:8px}
+input,select,button{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+input#code{width:140px;font-size:16px;letter-spacing:.05em}
+button.primary{background:var(--ink);color:#fff;border-color:var(--ink);cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:wait}
+label.file{color:var(--mute);cursor:pointer;font-size:12px}
+label.file input{display:none}
+#status{color:var(--mute);font-size:12px;margin-left:auto}
+#status.err{color:var(--up)}
+.tabs{display:flex;gap:4px;padding:10px 18px 0}
+.tabs button{border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#ecebe5;color:var(--mute);cursor:pointer}
+.tabs button.on{background:#fff;color:var(--ink);font-weight:600}
+main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr);gap:14px;padding:0 18px 24px}
+@media(max-width:1000px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:0 8px 8px 8px;padding:12px}
+#chart{height:560px}
+.verdict{background:#fbf7ee;border-left:3px solid var(--acc);padding:10px 12px;border-radius:4px;margin-bottom:12px}
+.verdict li{margin:4px 0;line-height:1.55}
+h2{font-size:14px;margin:14px 0 6px;color:var(--acc);letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--mute);font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.cd:hover{background:#fdf6e7;cursor:pointer}
+.tag{display:inline-block;padding:1px 6px;border-radius:10px;font-size:11px;background:#eee;color:#444;margin-right:3px}
+.tag.E{background:#fde2dd;color:var(--up)} .tag.N,.tag.V{background:#e5edf5;color:var(--dn)} .tag.NT{background:#eee}
+.ok{color:#2e7d32}.ng{color:var(--up)}
+details{margin-top:14px}
+details summary{cursor:pointer;color:var(--mute)}
+.md{font-size:13px;line-height:1.6}
+.md h2{font-size:15px;color:var(--ink);margin-top:18px}
+.md h3{font-size:13.5px;color:var(--acc)}
+.md code{background:#f1efe8;padding:0 4px;border-radius:3px}
+.muted{color:var(--mute);font-size:12px}
+.nb{display:flex;flex-wrap:wrap;gap:8px}
+.nb div{border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px;min-width:150px}
+.nb b{font-size:15px}
+.hist span{display:inline-block;margin-right:3px;padding:0 4px;border-radius:3px;font-size:11px}
+.hist .陽{background:#fde2dd;color:var(--up)} .hist .陰{background:#e5edf5;color:var(--dn)}
+</style>
+</head>
+<body>
+<header>
+  <h1>一目均衡表 節目判定<small>細田哲生（三世一目山人）理論ベース</small></h1>
+  <input id="code" placeholder="9201 / N225 / USDJPY" value="">
+  <select id="period"><option value="3y">3年</option><option value="6y" selected>6年</option><option value="10y">10年</option><option value="max">最大</option></select>
+  <button class="primary" id="go">分析</button>
+  <label class="file">CSV を読む <input type="file" id="csv" accept=".csv,text/csv"></label>
+  <span id="status">コードを入力して「分析」。動作確認は DEMO</span>
+</header>
+<div class="tabs" id="tabs"></div>
+<main>
+  <section class="panel"><div id="chart"></div><div class="muted" id="legendnote">紫点線＝相場水準候補、橙の縦線＝変化日候補（数字はスコア）、▲▼＝高値・安値（大きいほど重要）</div></section>
+  <section class="panel" id="side"><p class="muted">ここに総合所見・節目・変化日が表示されます。</p></section>
+</main>
+<script>
+let DATA=null, FRAME='daily';
+const $=s=>document.querySelector(s);
+const fmt=v=>v==null?'-':v.toLocaleString('ja-JP',{maximumFractionDigits:1});
+const st=(m,err)=>{const e=$('#status');e.textContent=m;e.className=err?'err':''};
+
+async function run(){
+  const code=$('#code').value.trim(); if(!code)return;
+  $('#go').disabled=true; st(`${code} を取得・分析中…`);
+  try{
+    const r=await fetch(`/api/analyze?code=${encodeURIComponent(code)}&period=${$('#period').value}`);
+    if(!r.ok){const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail)}
+    DATA=await r.json(); FRAME='daily'; render(); st(`${DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`);
+  }catch(e){st(e.message,true)} finally{$('#go').disabled=false}
+}
+$('#go').onclick=run; $('#code').addEventListener('keydown',e=>{if(e.key==='Enter')run()});
+$('#csv').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f)return; const fd=new FormData(); fd.append('file',f); fd.append('name',f.name.replace(/\.csv$/i,''));
+  st(`${f.name} を分析中…`);
+  try{const r=await fetch('/api/analyze_csv',{method:'POST',body:fd}); if(!r.ok){const j=await r.json();throw new Error(j.detail)}
+    DATA=await r.json(); FRAME='daily'; render(); st(`${DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`)}catch(err){st(err.message,true)}
+});
+
+function render(){
+  const names={daily:'日足',weekly:'週足',monthly:'月足'};
+  $('#tabs').innerHTML=Object.keys(DATA.frames).map(k=>`<button class="${k===FRAME?'on':''}" data-k="${k}">${names[k]}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k;render()});
+  const F=DATA.frames[FRAME]; drawChart(F); drawSide(F);
+}
+
+function drawChart(F){
+  const o=F.ohlc, L=F.lines, u=F.unit;
+  const traces=[
+    {type:'candlestick',x:o.date,open:o.open,high:o.high,low:o.low,close:o.close,name:'実線',
+     increasing:{line:{color:'#c0392b',width:1}},decreasing:{line:{color:'#1f5f8b',width:1}},whiskerwidth:.3,hoverinfo:'x+y'},
+    {x:L.date,y:L.span_tk,name:'先行(基準転換)',line:{color:'#8e9aaf',width:1},hoverinfo:'skip'},
+    {x:L.date,y:L.span_52,name:'先行(52)',line:{color:'#8e9aaf',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(142,154,175,.18)',hoverinfo:'skip'},
+    {x:L.date,y:L.tenkan,name:'転換線(9)',line:{color:'#d35400',width:1.3}},
+    {x:L.date,y:L.kijun,name:'基準線(26)',line:{color:'#2c3e50',width:1.6}},
+    {x:L.date,y:L.chikou,name:'遅行スパン(26)',line:{color:'#27ae60',width:1.2}},
+  ];
+  const H=F.pivots.filter(p=>p.kind==='H'&&p.rank>=2), Lo=F.pivots.filter(p=>p.kind==='L'&&p.rank>=2);
+  traces.push({x:H.map(p=>p.date),y:H.map(p=>p.price),mode:'markers+text',type:'scatter',name:'高値',text:H.map(p=>fmt(p.price)),textposition:'top center',textfont:{size:9,color:'#555'},
+    marker:{symbol:'triangle-down',size:H.map(p=>5+p.rank*2),color:'#555'},hovertemplate:'高値 %{x}<br>%{y:,.1f}<extra></extra>'});
+  traces.push({x:Lo.map(p=>p.date),y:Lo.map(p=>p.price),mode:'markers+text',type:'scatter',name:'安値',text:Lo.map(p=>fmt(p.price)),textposition:'bottom center',textfont:{size:9,color:'#555'},
+    marker:{symbol:'triangle-up',size:Lo.map(p=>5+p.rank*2),color:'#555'},hovertemplate:'安値 %{x}<br>%{y:,.1f}<extra></extra>'});
+  const shapes=[],ann=[];
+  F.levels.slice(0,6).forEach(l=>{shapes.push({type:'line',xref:'paper',x0:0,x1:1,y0:l.price,y1:l.price,line:{color:'#7d3c98',width:1,dash:'dot'}});
+    ann.push({xref:'paper',x:1,y:l.price,text:`水準 ${fmt(l.price)}`,showarrow:false,xanchor:'left',font:{size:10,color:'#7d3c98'}})});
+  const ymin=Math.min(...o.low), ymax=Math.max(...o.high);
+  F.change_dates.slice(0,8).forEach((c,i)=>{shapes.push({type:'line',x0:c.date,x1:c.date,y0:ymin,y1:ymax,line:{color:'#b9770e',width:1,dash:'dash'}});
+    ann.push({x:c.date,y:ymin+(ymax-ymin)*(0.02+0.06*(i%4)),text:`${c.date.slice(5)} (${c.score})`,showarrow:false,textangle:-90,font:{size:9,color:'#b9770e'},bgcolor:'rgba(255,255,255,.8)'})});
+  Plotly.newPlot('chart',traces,{
+    title:{text:`${DATA.name}  ${F.label}  終値 ${fmt(F.close)}（${F.last_date}）`,font:{size:14}},
+    margin:{l:50,r:80,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
+    yaxis:{tickformat:',.0f',gridcolor:'#eee'},shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
+    hovermode:'x unified',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false});
+}
+
+function drawSide(F){
+  const u=F.unit, c=F.close;
+  let h=`<div class="verdict"><strong>総合所見（暫定判断と検証条件）</strong><ul>${F.verdict.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
+  h+=`<div class="muted">並び順: ${F.position.order}　／　直近波形: <b>${F.waveform||'-'}</b>　／　三役: ${F.position.sanyaku}</div>`;
+  h+=`<h2>時間の節目 ― 変化日候補</h2><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>主な根拠</th></tr>`+
+    F.change_dates.slice(0,10).map(cd=>`<tr class="cd"><td class="num"><b>${cd.date}</b></td><td class="num">${cd.offset>0?'+':''}${cd.offset}</td><td class="num">${cd.score}</td><td>${cd.details.slice(0,3).map(d=>'・'+d).join('<br>')}${cd.n>3?`<br><span class="muted">…他 ${cd.n-3} 件</span>`:''}</td></tr>`).join('')+'</table>';
+  const up=F.calc.filter(x=>x.price>c).slice(0,6).reverse(), dn=F.calc.filter(x=>x.price<=c).slice(-6).reverse();
+  h+=`<h2>価格の節目 ― 計算値の集中</h2><table><tr><th class="num">値段</th><th class="num">現値比</th><th>種別</th><th>達成</th></tr>`+
+    up.concat(dn).map(x=>`<tr><td class="num"><b>${fmt(x.price)}</b></td><td class="num">${x.pct>0?'+':''}${x.pct}%</td><td>${x.kinds.split('/').map(k=>`<span class="tag ${k}">${k}</span>`).join('')}×${x.n}</td><td>${x.achieved?'<span class="ok">達成済</span>':'未達'}</td></tr>`).join('')+'</table>';
+  h+=`<h2>相場水準候補</h2><table><tr><th class="num">水準</th><th>根拠／起点</th><th>基本数値日の現れ方</th><th class="num">限界 上/下</th></tr>`+
+    F.levels.slice(0,6).map(l=>`<tr><td class="num"><b>${fmt(l.price)}</b><br><span class="muted">${((l.price/c-1)*100).toFixed(1)}%</span></td><td>${l.source}<br><span class="muted">起点 ${l.origin}</span></td><td class="muted">${l.hits.slice(0,5).map(x=>`${x.n}${u}目${x.what}`).join('、')||'—'}</td><td class="num">${fmt(l.upper)}<br>${fmt(l.lower)}</td></tr>`).join('')+'</table>';
+  h+=`<h2>三波動構成候補</h2><table><tr><th>向き</th><th>A / B / C</th><th class="num">時間</th><th>計算値（達成）</th><th>D 候補日</th></tr>`+
+    F.waves.slice(0,5).map(w=>`<tr><td>${w.dir==='up'?'上げ':'下げ'}</td><td class="muted">${w.A[0]} ${fmt(w.A[1])}<br>${w.B[0]} ${fmt(w.B[1])}<br>${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${Object.entries(w.d_dates).map(([k,v])=>`${k}: ${v||'-'}`).join('<br>')}</td></tr>`).join('')+'</table>';
+  h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
+  h+=`<details><summary>テキストレポート全文（細田理論の注記付き）</summary><div class="md">${mdToHtml(F.markdown)}</div></details>`;
+  $('#side').innerHTML=h;
+}
+const md=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+function mdToHtml(src){
+  const out=[]; let inList=false, depth=0;
+  const closeList=()=>{while(depth>0){out.push('</ul>');depth--} inList=false};
+  for(const raw of src.split('\n')){
+    const m=raw.match(/^(\s*)- (.*)$/);
+    if(m){const d=Math.floor(m[1].length/4)+1; while(depth<d){out.push('<ul>');depth++} while(depth>d){out.push('</ul>');depth--} out.push('<li>'+md(m[2])+'</li>'); inList=true; continue}
+    if(inList) closeList();
+    if(/^### /.test(raw)) out.push('<h3>'+md(raw.slice(4))+'</h3>');
+    else if(/^## /.test(raw)) out.push('<h2>'+md(raw.slice(3))+'</h2>');
+    else if(/^# /.test(raw)) out.push('<h2>'+md(raw.slice(2))+'</h2>');
+    else if(raw.trim()==='') out.push('');
+    else out.push('<p>'+md(raw)+'</p>');
+  }
+  closeList(); return out.join('\n');
+}
+</script>
+</body>
+</html>

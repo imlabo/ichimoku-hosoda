@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+yfinance>=0.2.40
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+plotly>=5.20
+matplotlib-fontja>=1.0
