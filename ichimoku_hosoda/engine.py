@@ -26,6 +26,7 @@ class AnalysisResult:
     horizon: int
     index_ext: pd.DatetimeIndex
     unit: str = "日"
+    extra_lag: int | None = None   # チャートに追加表示する遅行スパンの本数（日足 3、週足 9）
 
     # ---------- 出力 ----------
     def to_markdown(self, max_dates: int = 12, max_levels: int = 8, max_calc: int = 10) -> str:
@@ -200,7 +201,7 @@ def _jp(s: str) -> str:
 
 def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon: int = 60,
             nbar_specs: tuple[tuple[int, str], ...] = ((3, "3日足"),),
-            zz_thresholds: tuple[float, ...] = (0.03, 0.06, 0.12, 0.25)) -> AnalysisResult:
+            zz_thresholds: tuple[float, ...] = (0.03, 0.06, 0.12, 0.25), extra_lag: int | None = None) -> AnalysisResult:
     L = lines.compute(df)
     pivs = swings.pivots(df, zz_thresholds)
     # 進行中の極（最後）は暫定なので三波動の C には使うが rank は 1 のまま
@@ -219,4 +220,4 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
              + lv.level_change_dates(lvs, index_ext, n, horizon, unit=unit))
     clusters = numbers.cluster_dates(cands)
     nbs = [nbars.summarize(df, k, lab) for k, lab in nbar_specs]
-    return AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit)
+    return AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit, extra_lag)

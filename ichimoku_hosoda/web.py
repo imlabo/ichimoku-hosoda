@@ -22,7 +22,10 @@ _cache: dict[tuple, tuple[float, dict]] = {}
 CACHE_SEC = 900
 
 
-def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict | None = None) -> dict:
+def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict | None = None,
+                full_df: pd.DataFrame | None = None) -> dict:
+    """df: 日足タブに使う範囲、full_df: 週足・月足の作成に使う長期日足（省略時は df）。"""
+    full = full_df if full_df is not None and len(full_df) > len(df) else df
     out = {"name": name, "from": str(df.index[0].date()), "to": str(df.index[-1].date()), "bars": len(df), "frames": {},
            "notes": []}
     for key, (idf, label, zz) in (intraday or {}).items():
@@ -32,15 +35,16 @@ def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict |
         out["frames"][key] = result_to_json(
             analyze(idf, label, "本", 60, nbar_specs=((3, "3本足"), (9, "9本足"), (26, "26本足")), zz_thresholds=zz), bars=400)
     out["frames"]["daily"] = result_to_json(
-        analyze(df, "日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足"))), bars=320)
-    if len(df) >= 60:
-        wdf = data.resample(df, "W-FRI")
+        analyze(df, "日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足")), extra_lag=3),
+        bars=min(320, len(df)))
+    if len(full) >= 60:
+        wdf = data.resample(full, "W-FRI")
         if len(wdf) >= 60:
             out["frames"]["weekly"] = result_to_json(
                 analyze(wdf, "週足", "週", 26, nbar_specs=((9, "9週足"), (26, "26週足")),
-                        zz_thresholds=(0.05, 0.10, 0.20, 0.35)), bars=260)
-    if len(df) >= 300:
-        mdf = data.resample(df, "ME")
+                        zz_thresholds=(0.05, 0.10, 0.20, 0.35), extra_lag=9), bars=260)
+    if len(full) >= 300:
+        mdf = data.resample(full, "ME")
         if len(mdf) >= 40:
             out["frames"]["monthly"] = result_to_json(
                 analyze(mdf, "月足", "ヶ月", 18, nbar_specs=((9, "9ヶ月足"), (26, "26ヶ月足")),
@@ -68,13 +72,12 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
         return JSONResponse(hit[1])
     demo = code.strip().upper() == "DEMO"
     try:
-        df = data.synthetic() if demo else data.fetch(code, period=period)
+        # 週足・月足のため日足は常に長期（6年）を取得し、日足タブは選択期間に切り出す
+        full = data.synthetic() if demo else data.fetch(code, period="6y" if period in ("6mo", "1y", "3y", "6y") else period)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"データ取得に失敗しました: {e}") from e
-    if demo and period == "6mo":
-        df = df.iloc[-130:]
-    elif demo and period == "1y":
-        df = df.iloc[-250:]
+    cut = {"6mo": pd.DateOffset(months=6), "1y": pd.DateOffset(years=1), "3y": pd.DateOffset(years=3)}.get(period)
+    df = full[full.index >= full.index[-1] - cut] if cut else full
     intra = {}
     if intraday:
         for key2, interval, label, zz in (("m5", "5m", "5分足", (0.004, 0.008, 0.016, 0.03)),
@@ -84,7 +87,7 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
             except Exception:  # noqa: BLE001
                 idf = None
             intra[key2] = (idf, label, zz)
-    res = analyze_all(df, data.normalize_symbol(code), horizon, intra)
+    res = analyze_all(df, data.normalize_symbol(code), horizon, intra, full_df=full)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 

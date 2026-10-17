@@ -29,7 +29,7 @@ def lagging_span(df: pd.DataFrame, n: int = SHIFT) -> pd.Series:
 
 
 def compute(df: pd.DataFrame, extra_half: tuple[int, ...] = (51, 65, 76),
-            extra_lag: tuple[int, ...] = (9, 13, 17, 33, 42, 65)) -> pd.DataFrame:
+            extra_lag: tuple[int, ...] = (3, 9, 13, 17, 33, 42, 65)) -> pd.DataFrame:
     out = pd.DataFrame(index=df.index)
     out["tenkan"] = half_line(df, TENKAN)
     out["kijun"] = half_line(df, KIJUN)

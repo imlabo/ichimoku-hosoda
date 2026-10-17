@@ -72,7 +72,30 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
     }
     for col in ("tenkan", "kijun", "span_tk", "span_52", "chikou"):
         out["lines"][col] = [_f(v) for v in L[col]]
+    if res.extra_lag and f"chikou_{res.extra_lag}" in L.columns:
+        k = res.extra_lag
+        out["lines"]["chikou_x"] = [_f(v) for v in L[f"chikou_{k}"]]
+        out["extra_lag"] = {"n": k, "state": _lag_state(res.df, k)}
     return out
+
+
+def _lag_state(df: pd.DataFrame, k: int) -> dict:
+    """k 本遅行スパン＝本日終値 vs k 本前の実線。陽連・陰連（＝k本足）も返す。"""
+    c = df["Close"].values
+    n = len(df)
+    if n <= k:
+        return {}
+    ref = df.iloc[-1 - k]
+    rel = "up" if c[-1] > ref["High"] else "down" if c[-1] < ref["Low"] else "touch"
+    sign = np.sign(c[k:] - c[:-k])
+    run, cur = 0, sign[-1]
+    for v in sign[::-1]:
+        if v == cur and v != 0:
+            run += 1
+        else:
+            break
+    return {"rel": rel, "ref_date": _d(df.index[-1 - k]), "ref_high": _f(ref["High"]), "ref_low": _f(ref["Low"]),
+            "run": int(run), "run_sign": "陽" if cur > 0 else "陰" if cur < 0 else "同値"}
 
 
 def _dinfo(w, rel, i, n, res):
