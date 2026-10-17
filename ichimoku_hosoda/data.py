@@ -19,8 +19,11 @@ def normalize_symbol(code: str) -> str:
     c = code.strip()
     if c in ("日経平均", "N225", "n225", "nikkei", "NIKKEI"):
         return "^N225"
-    if re.fullmatch(r"\d{4}", c):
-        return f"{c}.T"
+    # 東証コード: 4桁数字、または 285A のような英字入り新形式（数字3桁＋英数字、など）
+    if re.fullmatch(r"[0-9][0-9A-Za-z]{3}", c) and not c.isalpha():
+        return f"{c.upper()}.T"
+    if re.fullmatch(r"[0-9][0-9A-Za-z]{3}\.T", c, flags=re.I):
+        return c.upper()
     if re.fullmatch(r"[A-Za-z]{6}", c) and c.upper() in {"USDJPY", "EURUSD", "EURJPY", "GBPJPY", "AUDJPY"}:
         return f"{c.upper()}=X"
     return c
@@ -70,7 +73,7 @@ def _fetch_stooq(sym: str, period: str) -> pd.DataFrame:
 
     url = f"https://stooq.com/q/d/l/?s={_stooq_symbol(sym)}&i=d"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=40) as r:
         raw = r.read().decode("utf-8", "replace")
     if "No data" in raw or raw.count("\n") < 30:
         raise RuntimeError("データなし")
