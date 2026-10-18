@@ -41,10 +41,8 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "lines": {"date": [_d(d) for d in L.index]},
         "pivots": [{"date": _d(p.date), "price": _f(p.price), "kind": p.kind, "rank": p.rank}
                    for p in res.pivots if p.date >= df.index[0]],
-        "levels": [{"price": _f(l.price), "source": l.source.split(" / ")[0], "origin": _d(l.origin),
-                    "score": round(l.score, 2), "upper": _f(l.upper_limit), "lower": _f(l.lower_limit),
-                    "hits": [{"n": h["n"], "date": _d(h["date"]), "what": h["what"]} for h in l.hits[:8]]}
-                   for l in res.levels[:8]],
+        "levels": [_level(l, res, n) for l in res.levels[:8]],
+        "future_dates": [_d(d) for d in res.index_ext[n:n + res.horizon]],
         "calc": [{"price": _f(c["price"]), "kinds": c["kinds"], "n": c["n"], "achieved": bool(c["achieved"]),
                   "pct": round(c["pct_from_close"], 2)} for c in res.calc_clusters],
         "change_dates": [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
@@ -106,3 +104,25 @@ def _dinfo(w, rel, i, n, res):
     return {"rel": rel, "date": _d(res.index_ext[i]) if i < len(res.index_ext) else None,
             "offset": int(i - (n - 1)), "ad": ad, "ad_basic": nb[0] if nb else None,
             "days": w.ab if rel != "AC=CD" else w.ac}
+
+
+def _level(l, res, n):
+    from .numbers import basic_numbers
+    df = res.df
+    c = float(df["Close"].iloc[-1])
+    elapsed = n - l.origin_i  # 起点を 1 本目とした現在の本数 = elapsed
+    nxt = [b for b in basic_numbers() if b > elapsed][:3]
+    hi_since = float(df["High"].iloc[l.origin_i:].max())
+    lo_since = float(df["Low"].iloc[l.origin_i:].min())
+    # 直近 26 本で水準を跨いだ回数（押し戻りとして機能せず水準化しているか）
+    seg = df.iloc[-26:]
+    cross = int(((seg["Low"] <= l.price) & (seg["High"] >= l.price)).sum())
+    return {"price": _f(l.price), "source": l.source.split(" / ")[0], "sources": l.source.split(" / "),
+            "origin": _d(l.origin), "elapsed": int(elapsed), "score": round(l.score, 2),
+            "upper": _f(l.upper_limit), "lower": _f(l.lower_limit),
+            "hi_since": hi_since, "lo_since": lo_since,
+            "rel": "above" if c > l.price else "below", "pct": round((c / l.price - 1) * 100, 2),
+            "touch26": cross,
+            "next_basic": [{"n": b, "date": _d(res.index_ext[l.origin_i + b - 1]) if l.origin_i + b - 1 < len(res.index_ext) else None,
+                            "ahead": l.origin_i + b - 1 - (n - 1)} for b in nxt],
+            "hits": [{"n": h["n"], "date": _d(h["date"]), "what": h["what"]} for h in l.hits[:10]]}
