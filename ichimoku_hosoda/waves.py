@@ -112,8 +112,40 @@ def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_ba
         if k not in seen:
             seen.add(k)
             uniq.append(w)
-    uniq.sort(key=lambda w: -(2.5 * w.A.rank + 1.5 * w.C.rank + min(w.ab + w.bc, 120) / 20 + (3 if w.C.i >= len(df) - 60 else 0)))
-    return uniq
+    n_bars = len(df)
+    start = max(0, n_bars - 400)
+    lows = [p for p in pivs if p.kind == "L" and p.i >= start]
+    highs = [p for p in pivs if p.kind == "H" and p.i >= start]
+    ext_low = min(lows, key=lambda p: p.price).i if lows else None
+    ext_high = max(highs, key=lambda p: p.price).i if highs else None
+
+    def score(w: Wave3) -> float:
+        sc = 2.5 * w.A.rank + 1.5 * w.C.rank
+        if (w.direction == "up" and w.A.i == ext_low) or (w.direction == "down" and w.A.i == ext_high):
+            sc += 4            # 期間の最安値（最高値）を起点とする三波動は常に見るべき
+        if w.C.i >= n_bars - 60:
+            sc += 3            # C が直近
+        ab_px, bc_px = abs(w.B.price - w.A.price), abs(w.C.price - w.B.price)
+        if ab_px >= bc_px:
+            sc += 2            # 第一波動の値幅が第二波動より大きい（N 型として自然）
+        if w.ab / max(w.ac, 1) < 0.25:
+            sc -= 3            # 第一波動が極端に短く第二波動がだらだら長い（B が早すぎる）
+        if w.bc > 2 * w.ab:
+            sc -= 2
+        return sc
+
+    uniq.sort(key=lambda w: -score(w))
+    # 起点ごとの多様性: 同じ A は最大 3 件、全体で 14 件
+    per_a: dict[int, int] = {}
+    picked = []
+    for w in uniq:
+        if per_a.get(w.A.i, 0) >= 3:
+            continue
+        per_a[w.A.i] = per_a.get(w.A.i, 0) + 1
+        picked.append(w)
+        if len(picked) >= 14:
+            break
+    return picked
 
 
 def wave_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bars: int, horizon: int,
