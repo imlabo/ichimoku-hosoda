@@ -237,10 +237,12 @@ function drawChart(F){
   // ---- D 予測日（上位2波動、将来のみ）: 線は上 1/3、ラベルは上端
   if(LY('ly_d')){
     const seen=new Set(); const ws=[F.waves[SEL_WAVE]||F.waves[0]].filter(Boolean);
-    ws.forEach((w,wi)=>w.d_info.forEach(d=>{ if(!d.date||d.offset<0||seen.has(d.date)) return; seen.add(d.date);
+    // 過去になった D も表示範囲内なら引く（その日に高値・安値となったかを確かめるため）
+    ws.forEach((w,wi)=>w.d_info.forEach(d=>{ if(!d.date||seen.has(d.date)||!allDates.includes(d.date)) return; seen.add(d.date);
+      const past=d.offset<0;
       shapes.push({type:'line',x0:d.date,x1:d.date,y0:ymin+span*.55,y1:ymax+span*.04,line:{color:'#0e7c86',width:1.4,dash:'dot'}});
       ann.push({x:d.date,y:ymax+span*.075,text:`<b>${d.date.slice(5)}</b>`,showarrow:false,font:{size:10,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.9)',xanchor:'center',yanchor:'bottom'});
-      ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（+${d.offset}${u}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
+      ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（${past?`${-d.offset}${u}前・経過`:d.offset===0?'本日':`+${d.offset}${u}`}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
   Plotly.newPlot('chart',traces,{
     title:{text:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
@@ -258,7 +260,7 @@ function drawChart(F){
       const key=w=>w.A[0]+'|'+w.C[0]; const have=new Set(F.waves.map(key));
       const add=j.waves.filter(w=>!have.has(key(w))); F.waves=add.concat(F.waves); SEL_WAVE=0; drawChart(F); drawSide(F);
       st(`起点 ${piv.date} の三波動 ${j.waves.length} 件を追加（先頭に表示）`)}catch(e){st(e.message,true)}});
-  $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側）／赤・青の長破線＝未達の計算値の集中、茶色＝選択中の三波動の計算値。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
+  $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／赤・青の長破線＝未達の計算値の集中、茶色＝選択中の三波動の計算値。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
 }
 
 // ---- A・B・C のドラッグ（▲▼ の位置にだけ吸着）→「再計算」ボタンで計算
