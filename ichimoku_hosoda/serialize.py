@@ -46,10 +46,9 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "future_all": [_d(d) for d in res.index_ext[n:n + 260]],   # D 予測日など遠い日付の並び順用
         "calc": [{"price": _f(c["price"]), "kinds": c["kinds"], "n": c["n"], "achieved": bool(c["achieved"]),
                   "pct": round(c["pct_from_close"], 2)} for c in res.calc_clusters],
-        "change_dates": [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
-                          "n": c["n_sources"], "kinds": c["kinds"], "details": [i.detail for i in c["items"][:6]]}
-                         for c in res.change_clusters[:15]],
-        "waves": [{"dir": w.direction, "tag": w.tag, "A": [_d(w.A.date), _f(w.A.price)], "A_rank": w.A.rank, "A_i": w.A.i, "C_i": w.C.i,
+        "change_dates": clusters_to_json(res.change_clusters[:15], n),
+        "n_total": n, "ohlc_from": n - len(df),
+        "waves": [{"dir": w.direction, "tag": w.tag, "A": [_d(w.A.date), _f(w.A.price)], "A_rank": w.A.rank, "A_i": w.A.i, "B_i": w.B.i, "C_i": w.C.i,
                    "B": [_d(w.B.date), _f(w.B.price)],
                    "C": [_d(w.C.date), _f(w.C.price)], "ab": w.ab, "bc": w.bc, "ac": w.ac,
                    "calc": {k: _f(v) for k, v in w.calc.items()}, "achieved": w.achieved,
@@ -135,3 +134,9 @@ def waves_to_json(waves, res, n):
     tmp = copy.copy(res)
     tmp.waves = waves
     return result_to_json(tmp, bars=10)["waves"]
+
+
+def clusters_to_json(clusters, n):
+    return [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
+             "n": c["n_sources"], "kinds": c["kinds"], "details": [i.detail for i in c["items"][:6]]}
+            for c in clusters]

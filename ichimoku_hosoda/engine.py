@@ -241,3 +241,36 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     clusters = numbers.cluster_dates(cands)
     nbs = [nbars.summarize(df, k, lab) for k, lab in nbar_specs]
     return AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit, extra_lag)
+
+
+def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: str):
+    """チャート上で A・B・C をドラッグして決めた三波動。各点はその足の高値／安値に吸着させる。
+    返り値: (Wave3, その三波動だけから出した変化日クラスタ)"""
+    df, n, unit, horizon, index_ext = res.df, len(res.df), res.unit, res.horizon, res.index_ext
+    if not (0 <= a_i < b_i <= c_i < n):
+        raise ValueError("A → B → C の順に並べてください（A が最も古い日付）")
+    up = direction == "up"
+    hi, lo = df["High"].values, df["Low"].values
+
+    def pt(i, kind):
+        p = next((q for q in res.pivots if q.i == i and q.kind == kind), None)
+        return swings.Pivot(i, df.index[i], float(hi[i] if kind == "H" else lo[i]), kind, p.rank if p else 1)
+
+    A, B, C = (pt(a_i, "L"), pt(b_i, "H"), pt(c_i, "L")) if up else (pt(a_i, "H"), pt(b_i, "L"), pt(c_i, "H"))
+    w = waves._mk_wave(A, B, C, direction, df)
+    w.tag = "手動（ドラッグで指定）"
+    if (up and C.price <= A.price) or (not up and C.price >= A.price):
+        w.note += "／注意: C が A を越えている（三波動の形になっていません）"
+    cands = []
+    for c in numbers.basic_change_dates([A, B, C], index_ext, n, horizon, unit=unit):
+        c.detail = "【手動】" + c.detail
+        cands.append(c)
+    for base, length, lab in ((B, w.ab, "AB"), (C, w.bc, "BC"), (C, w.ab, "AB"), (C, w.ac, "AC")):
+        j = base.i + length - 1
+        if n - 3 <= j < n + horizon:
+            cands.append(numbers.ChangeDate(j, index_ext[j], "equal", length, base.date, base.kind,
+                f"【手動】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{base.date.date()} から", 2.0))
+    for c in waves.wave_change_dates([w], index_ext, n, horizon, unit=unit):
+        c.detail = c.detail.replace("【定型】", "【手動】")
+        cands.append(c)
+    return w, numbers.cluster_dates(cands)

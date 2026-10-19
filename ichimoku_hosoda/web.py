@@ -15,7 +15,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import data, margin, names
 from .engine import analyze
-from .serialize import result_to_json, waves_to_json
+from .serialize import clusters_to_json, result_to_json, waves_to_json
+from .engine import manual_wave
 from . import waves as wavemod
 
 _results: dict[tuple, dict] = {}   # (code, period) -> {frame_key: AnalysisResult}
@@ -149,14 +150,39 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     return JSONResponse(res)
 
 
+def _get_result(code: str, frame: str, period: str):
+    """保存済みの分析結果。サーバー再起動などで消えていたら分析をやり直す。"""
+    code2, _ = names.resolve(code)
+    k = (code2.strip().upper(), period)
+    if frame not in (_results.get(k) or {}):
+        for ck in [ck for ck in _cache if ck[0] == k[0] and ck[1] == period]:
+            _cache.pop(ck, None)
+        api_analyze(code, period)
+    r = (_results.get(k) or {}).get(frame)
+    if r is None:
+        raise HTTPException(404, "分析結果が見つかりません。もう一度「分析」を押してください")
+    return r
+
+
+@app.get("/api/wave_custom")
+def api_wave_custom(code: str, frame: str, a: int, b: int, c: int, dir: str, period: str = "6y"):
+    """チャート上で A・B・C をドラッグして指定した三波動（a/b/c は足の位置）。計算値・D・変化日を返す。"""
+    r = _get_result(code, frame, period)
+    try:
+        w, cl = manual_wave(r, a, b, c, "up" if dir == "up" else "down")
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    wj = waves_to_json([w], r, len(r.df))[0]
+    wj["manual"] = True
+    wj["note"] = w.note
+    wj["cd"] = clusters_to_json(cl[:12], len(r.df))
+    return JSONResponse({"wave": wj})
+
+
 @app.get("/api/waves_from")
 def api_waves_from(code: str, frame: str, a_i: int, period: str = "6y"):
     """チャート上で選んだ極（pivot index a_i）を起点 A にした三波動候補を返す。"""
-    code, _ = names.resolve(code)
-    store = _results.get((code.strip().upper(), period)) or {}
-    r = store.get(frame)
-    if r is None:
-        raise HTTPException(404, "先に分析を実行してください（サーバー再起動でキャッシュが消えた場合も同様）")
+    r = _get_result(code, frame, period)
     pos = {p.i: k for k, p in enumerate(r.pivots)}
     if a_i not in pos:
         raise HTTPException(400, "その点は極として登録されていません")
