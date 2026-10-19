@@ -13,7 +13,7 @@ import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import data
+from . import data, margin
 from .engine import analyze
 from .serialize import result_to_json
 
@@ -37,6 +37,12 @@ def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict |
     out["frames"]["daily"] = result_to_json(
         analyze(df, "日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足")), extra_lag=3),
         bars=min(320, len(df)))
+    # 上下反転（下落を上昇として読む）: 同じエンジンを反転データに適用
+    inv_df, ref = data.invert(df)
+    inv = result_to_json(analyze(inv_df, "反転日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足")),
+                                 extra_lag=3), bars=min(320, len(df)))
+    inv["inverted"] = {"ref": ref, "note": "値 = 基準×2 − 実際の価格。反転上の『上げ』は実際の下げ、『押し目』は実際の戻り。y 軸目盛は実際の価格で表示"}
+    out["frames"]["daily_inv"] = inv
     if len(full) >= 60:
         wdf = data.resample(full, "W-FRI")
         if len(wdf) >= 60:
@@ -88,6 +94,7 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
                 idf = None
             intra[key2] = (idf, label, zz)
     res = analyze_all(df, data.normalize_symbol(code), horizon, intra, full_df=full)
+    res["margin"] = margin.synthetic_margin() if demo else margin.fetch_margin(code)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 

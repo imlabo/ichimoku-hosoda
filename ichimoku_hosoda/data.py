@@ -196,3 +196,14 @@ def synthetic_intraday(interval: str = "5m", seed: int = 11) -> pd.DataFrame:
     lo = np.minimum(close, opn) * (1 - np.abs(rng.normal(0, 0.0008, n)))
     df = pd.DataFrame({"Open": opn, "High": hi, "Low": lo, "Close": close}, index=pd.DatetimeIndex(times, name="Date"))
     return df.round(1)
+
+
+def invert(df: pd.DataFrame, ref: float | None = None) -> tuple[pd.DataFrame, float]:
+    """上下反転: 価格' = ref×2 − 価格（高値と安値、始値と終値の役割を入れ替える）。ref は期間の高値+安値の半値。"""
+    if ref is None:
+        ref = (float(df["High"].max()) + float(df["Low"].min())) / 2.0
+    out = pd.DataFrame({"Open": 2 * ref - df["Open"], "High": 2 * ref - df["Low"],
+                        "Low": 2 * ref - df["High"], "Close": 2 * ref - df["Close"]}, index=df.index)
+    if "Volume" in df.columns:
+        out["Volume"] = df["Volume"]
+    return out, ref

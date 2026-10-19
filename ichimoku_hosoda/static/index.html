@@ -100,8 +100,8 @@ $('#csv').addEventListener('change',async e=>{
 });
 
 function render(){
-  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足'};
-  const order=['m5','h1','daily','weekly','monthly'].filter(k=>DATA.frames[k]);
+  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足',daily_inv:'反転日足'};
+  const order=['m5','h1','daily','weekly','monthly','daily_inv'].filter(k=>DATA.frames[k]);
   $('#tabs').innerHTML=order.map(k=>`<button class="${k===FRAME?'on':''}" data-k="${k}">${names[k]}</button>`).join('')+(DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k;render()});
   const F=DATA.frames[FRAME]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
@@ -127,11 +127,12 @@ function drawChart(F){
   ];
   if(Ls.chikou_x&&F.extra_lag) traces.push({x:Ls.date,y:Ls.chikou_x,name:`遅行スパン(${F.extra_lag.n})`,line:{color:'#7f8c1a',width:1.1,dash:'dot'}});
   const inWin=d=>d>=o.date[0];
+  const rp=v=>F.inverted?2*F.inverted.ref-v:v;   // 反転チャートではラベルを実際の価格に戻す
   if(LY('ly_piv')){
     const H=F.pivots.filter(p=>p.kind==='H'&&p.rank>=2&&inWin(p.date)), Lo=F.pivots.filter(p=>p.kind==='L'&&p.rank>=2&&inWin(p.date));
-    traces.push({x:H.map(p=>p.date),y:H.map(p=>p.price),mode:'markers+text',type:'scatter',name:'高値',text:H.map(p=>fmt(p.price)),textposition:'top center',textfont:{size:9,color:'#555'},
+    traces.push({x:H.map(p=>p.date),y:H.map(p=>p.price),mode:'markers+text',type:'scatter',name:'高値',text:H.map(p=>fmt(rp(p.price))),textposition:'top center',textfont:{size:9,color:'#555'},
       marker:{symbol:'triangle-down',size:H.map(p=>5+p.rank*2),color:'#555'},hovertemplate:'高値 %{x}<br>%{y:,.1f}<extra></extra>'});
-    traces.push({x:Lo.map(p=>p.date),y:Lo.map(p=>p.price),mode:'markers+text',type:'scatter',name:'安値',text:Lo.map(p=>fmt(p.price)),textposition:'bottom center',textfont:{size:9,color:'#555'},
+    traces.push({x:Lo.map(p=>p.date),y:Lo.map(p=>p.price),mode:'markers+text',type:'scatter',name:'安値',text:Lo.map(p=>fmt(rp(p.price))),textposition:'bottom center',textfont:{size:9,color:'#555'},
       marker:{symbol:'triangle-up',size:Lo.map(p=>5+p.rank*2),color:'#555'},hovertemplate:'安値 %{x}<br>%{y:,.1f}<extra></extra>'});
   }
   const shapes=[],ann=[];
@@ -142,7 +143,7 @@ function drawChart(F){
     const lv=F.levels.filter(l=>l.price>ymin-span*.05&&l.price<ymax+span*.05).slice(0,6);
     lv.forEach((l,i)=>{const sel=SEL_LEVEL===l.price, col=sel?'#5b1a86':'#7d3c98', x0=inWin(l.origin)?l.origin:o.date[0];
       shapes.push({type:'line',x0,x1:lastX,y0:l.price,y1:l.price,line:{color:col,width:sel?2:1,dash:'dot'}});
-      ann.push({x:x0,y:l.price,text:`水準${i+1} ${fmt(l.price)}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col},bgcolor:'rgba(255,255,255,.75)'});
+      ann.push({x:x0,y:l.price,text:`水準${i+1} ${fmt(rp(l.price))}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col},bgcolor:'rgba(255,255,255,.75)'});
       traces.push({x:[inWin(l.origin)?l.origin:null].filter(Boolean),y:[l.price],mode:'markers',type:'scatter',showlegend:false,marker:{symbol:'diamond',size:9,color:col},hovertemplate:`水準${i+1} 起点 ${l.origin}<br>${l.source}<extra></extra>`});
       const hs=l.hits.filter(h=>inWin(h.date));
       if(hs.length) traces.push({x:hs.map(h=>h.date),y:hs.map(()=>l.price),mode:'markers',type:'scatter',showlegend:false,marker:{size:6,color:col,symbol:hs.map(h=>h.what==='高値'?'triangle-down':h.what==='安値'?'triangle-up':'circle')},
@@ -156,7 +157,7 @@ function drawChart(F){
     const up=F.calc.filter(x=>x.price>F.close&&!x.achieved).slice(0,3), dn=F.calc.filter(x=>x.price<F.close&&!x.achieved).slice(-3);
     up.concat(dn).forEach(x=>{ if(x.price<ymin-span*.05||x.price>ymax+span*.08) return; const k=x.kinds.split('/')[0];
       shapes.push({type:'line',xref:'paper',x0:0.6,x1:1,y0:x.price,y1:x.price,line:{color:col[k]||'#555',width:1.2,dash:'longdash'}});
-      ann.push({xref:'paper',x:0.61,y:x.price,text:`${x.kinds} ${fmt(x.price)}${x.n>1?' ×'+x.n:''}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col[k]||'#555'}})});
+      ann.push({xref:'paper',x:0.61,y:x.price,text:`${x.kinds} ${fmt(rp(x.price))}${x.n>1?' ×'+x.n:''}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col[k]||'#555'}})});
     if(F.waves.length){const w=F.waves[0]; traces.push({x:[w.A[0],w.B[0],w.C[0]],y:[w.A[1],w.B[1],w.C[1]],mode:'lines+markers+text',type:'scatter',name:'三波動 A-B-C',
       text:['A','B','C'],textposition:'middle right',textfont:{size:11,color:'#8a5a1e'},line:{color:'#8a5a1e',width:1.5},marker:{size:7,color:'#8a5a1e'},hovertemplate:'%{text} %{x}<br>%{y:,.1f}<extra></extra>'})}
   }
@@ -174,16 +175,18 @@ function drawChart(F){
       ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D${wi+1} ${d.rel}`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
   Plotly.newPlot('chart',traces,{
-    title:{text:`${DATA.name}  ${F.label}  終値 ${fmt(F.close)}（${F.last_date}）`,font:{size:14}},
+    title:{text:`${DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
-    yaxis:{tickformat:',.0f',gridcolor:'#eee',range:[ymin-span*.08,ymax+span*.08]},shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
+    yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[ymin-span*.08,ymax+span*.08]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
     hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false});
   $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝三波動の終了予測日 D（上側）／赤・青の長破線＝未達の計算値';
 }
 
 function drawSide(F){
   const u=F.unit, c=F.close, u_=u;
-  let h=`<div class="verdict"><strong>総合所見（暫定判断と検証条件）</strong><ul>${F.verdict.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
+  let h='';
+  if(F.inverted) h+=`<div class="verdict" style="background:#eef3f8;border-left-color:#1f5f8b"><b>上下反転チャート</b>：${F.inverted.note}。基準 ${fmt(F.inverted.ref)}。下げ相場を上げ相場として読み直すことで、戻りの限界・下げ三波動の終了予測日・下げ側の計算値を、上げ相場と同じ型で確認できます。</div>`;
+  h+=`<div class="verdict"><strong>総合所見（暫定判断と検証条件）</strong><ul>${F.verdict.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
   h+=`<div class="muted">並び順: ${F.position.order}　／　直近波形: <b>${F.waveform||'-'}</b>　／　三役: ${F.position.sanyaku}</div>`;
   if(F.extra_lag&&F.extra_lag.state&&F.extra_lag.state.rel){const e=F.extra_lag.state, rel={up:'上（好転）',down:'下（悪化）',touch:'実線に触れている'}[e.rel];
     h+=`<div class="muted" style="margin-top:4px">遅行スパン(${F.extra_lag.n}): ${e.ref_date} の実線（${fmt(e.ref_low)}〜${fmt(e.ref_high)}）に対して <b>${rel}</b>　／　${e.run_sign}${e.run}連（${F.extra_lag.n}${u}足相当）</div>`}
@@ -217,10 +220,26 @@ function drawSide(F){
   h+=`<h2>三波動構成候補</h2><table><tr><th>向き</th><th>A / B / C</th><th class="num">時間</th><th>計算値（達成）</th><th>D 候補日</th></tr>`+
     F.waves.slice(0,5).map(w=>`<tr><td>${w.dir==='up'?'上げ':'下げ'}</td><td class="muted">${w.A[0]} ${fmt(w.A[1])}<br>${w.B[0]} ${fmt(w.B[1])}<br>${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${Object.entries(w.d_dates).map(([k,v])=>`${k}: ${v||'-'}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
+  if(FRAME==='daily'||FRAME==='daily_inv'){ const M=DATA.margin;
+    h+=`<h2>信用残の推移（週次・直近約1か月）</h2>`;
+    if(!M||M.error){h+=`<div class="muted">取得できませんでした${M&&M.error?'：'+M.error:''}</div>`}
+    else{const rows=M.rows; const last=rows[rows.length-1], first=rows[0];
+      const trend=(k,lab)=>{const a=first[k],b=last[k]; if(a==null||b==null) return ''; const d=b-a, pc=a?(d/a*100).toFixed(1):'-'; return `${lab} ${d>=0?'+':''}${fmt(d)}（${d>=0?'+':''}${pc}%）`};
+      h+=`<div class="muted" style="margin-bottom:6px">${first.date}→${last.date}: ${trend('buy','買い残')}、${trend('sell','売り残')}、信用倍率 ${first.ratio??'-'}→${last.ratio??'-'}</div>`;
+      h+=`<table><tr><th>日付</th><th class="num">買い残</th><th class="num">前週比</th><th class="num">売り残</th><th class="num">前週比</th><th class="num">倍率</th></tr>`+
+        rows.map(r=>`<tr><td>${r.date}</td><td class="num">${fmt(r.buy)}</td><td class="num ${r.buy_chg>0?'ng':'ok'}">${r.buy_chg==null?'-':(r.buy_chg>0?'+':'')+fmt(r.buy_chg)}</td><td class="num">${fmt(r.sell)}</td><td class="num">${r.sell_chg==null?'-':(r.sell_chg>0?'+':'')+fmt(r.sell_chg)}</td><td class="num">${r.ratio??'-'}</td></tr>`).join('')+'</table>';
+      h+=`<div id="marginchart" style="height:160px;margin-top:6px"></div>`;
+      setTimeout(()=>{ if(!$('#marginchart')) return; Plotly.newPlot('marginchart',[
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.buy),type:'bar',name:'買い残',marker:{color:'#c0392b'}},
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.sell),type:'bar',name:'売り残',marker:{color:'#1f5f8b'}},
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.ratio),type:'scatter',name:'倍率',yaxis:'y2',line:{color:'#8a5a1e'},mode:'lines+markers'}],
+        {margin:{l:50,r:40,t:5,b:30},barmode:'group',yaxis:{tickformat:',.0f'},yaxis2:{overlaying:'y',side:'right',title:'倍率'},legend:{orientation:'h',y:1.2,font:{size:10}},paper_bgcolor:'#fff',plot_bgcolor:'#fff',xaxis:{type:'category'}},{displaylogo:false,responsive:true})},0);
+      if(M.source&&M.source!=='synthetic') h+=`<div class="muted">出所: ${M.source}</div>`}}
   h+=`<details><summary>テキストレポート全文（細田理論の注記付き）</summary><div class="md">${mdToHtml(F.markdown)}</div></details>`;
   $('#side').innerHTML=h;
   $('#side').querySelectorAll('tr.lv').forEach(r=>r.onclick=()=>{const p=+r.dataset.p; SEL_LEVEL=SEL_LEVEL===p?null:p; drawChart(F); $('#side').querySelectorAll('tr.lv').forEach(x=>x.classList.toggle('sel',+x.dataset.p===SEL_LEVEL))});
 }
+const niceStep=x=>{const p=Math.pow(10,Math.floor(Math.log10(x))); const m=x/p; return (m<1.5?1:m<3.5?2:m<7.5?5:10)*p};
 const md=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
 function mdToHtml(src){
   const out=[]; let inList=false, depth=0;
