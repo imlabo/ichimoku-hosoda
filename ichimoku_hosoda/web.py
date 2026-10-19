@@ -15,7 +15,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import data, margin
 from .engine import analyze
-from .serialize import result_to_json
+from .serialize import result_to_json, waves_to_json
+from . import waves as wavemod
+
+_results: dict[tuple, dict] = {}   # (code, period) -> {frame_key: AnalysisResult}
 
 app = FastAPI(title="一目均衡表 節目判定（細田哲生理論）")
 _cache: dict[tuple, tuple[float, dict]] = {}
@@ -25,14 +28,22 @@ CACHE_SEC = 900
 INV_NOTE = "値 = 基準×2 − 実際の価格。反転上の『上げ』は実際の下げ、『押し目』は実際の戻り。y 軸目盛とチャート上のラベルは実際の価格"
 
 
-def _with_inverse(src: pd.DataFrame, label: str, unit: str, horizon: int, nbar_specs, zz=None, extra_lag=None, bars=300):
+_LAST: dict = {}
+
+
+def _with_inverse(src: pd.DataFrame, label: str, unit: str, horizon: int, nbar_specs, zz=None, extra_lag=None, bars=300, key=None):
     kw = dict(nbar_specs=nbar_specs, extra_lag=extra_lag)
     if zz:
         kw["zz_thresholds"] = zz
-    normal = result_to_json(analyze(src, label, unit, horizon, **kw), bars=bars)
+    r1 = analyze(src, label, unit, horizon, **kw)
+    normal = result_to_json(r1, bars=bars)
     inv_df, ref = data.invert(src)
-    inv = result_to_json(analyze(inv_df, "反転" + label, unit, horizon, **kw), bars=bars)
+    r2 = analyze(inv_df, "反転" + label, unit, horizon, **kw)
+    inv = result_to_json(r2, bars=bars)
     inv["inverted"] = {"ref": ref, "note": INV_NOTE}
+    if key:
+        _LAST[key] = r1
+        _LAST[key + "_inv"] = r2
     return normal, inv
 
 
@@ -47,19 +58,19 @@ def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict |
             out["notes"].append(f"{label}: データ不足または取得不可")
             continue
         out["frames"][key], out["frames"][key + "_inv"] = _with_inverse(
-            idf, label, "本", 60, ((3, "3本足"), (9, "9本足"), (26, "26本足")), zz, None, 400)
+            idf, label, "本", 60, ((3, "3本足"), (9, "9本足"), (26, "26本足")), zz, None, 400, key=key)
     out["frames"]["daily"], out["frames"]["daily_inv"] = _with_inverse(
-        df, "日足", "日", horizon, ((3, "3日足"), (9, "9日足"), (26, "26日足")), None, 3, min(320, len(df)))
+        df, "日足", "日", horizon, ((3, "3日足"), (9, "9日足"), (26, "26日足")), None, 3, min(320, len(df)), key="daily")
     if len(full) >= 60:
         wdf = data.resample(full, "W-FRI")
         if len(wdf) >= 60:
             out["frames"]["weekly"], out["frames"]["weekly_inv"] = _with_inverse(
-                wdf, "週足", "週", 26, ((9, "9週足"), (26, "26週足")), (0.05, 0.10, 0.20, 0.35), 9, 260)
+                wdf, "週足", "週", 26, ((9, "9週足"), (26, "26週足")), (0.05, 0.10, 0.20, 0.35), 9, 260, key="weekly")
     if len(full) >= 300:
         mdf = data.resample(full, "ME")
         if len(mdf) >= 40:
             out["frames"]["monthly"], out["frames"]["monthly_inv"] = _with_inverse(
-                mdf, "月足", "ヶ月", 18, ((9, "9ヶ月足"), (26, "26ヶ月足")), (0.08, 0.15, 0.30, 0.50), None, 200)
+                mdf, "月足", "ヶ月", 18, ((9, "9ヶ月足"), (26, "26ヶ月足")), (0.08, 0.15, 0.30, 0.50), None, 200, key="monthly")
     return out
 
 
@@ -98,10 +109,27 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
             except Exception:  # noqa: BLE001
                 idf = None
             intra[key2] = (idf, label, zz)
+    _LAST.clear()
     res = analyze_all(df, data.normalize_symbol(code), horizon, intra, full_df=full)
+    _results[(key[0], period)] = dict(_LAST)
     res["margin"] = margin.synthetic_margin() if demo else margin.fetch_margin(code)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
+
+
+@app.get("/api/waves_from")
+def api_waves_from(code: str, frame: str, a_i: int, period: str = "6y"):
+    """チャート上で選んだ極（pivot index a_i）を起点 A にした三波動候補を返す。"""
+    store = _results.get((code.strip().upper(), period)) or {}
+    r = store.get(frame)
+    if r is None:
+        raise HTTPException(404, "先に分析を実行してください（サーバー再起動でキャッシュが消えた場合も同様）")
+    pos = {p.i: k for k, p in enumerate(r.pivots)}
+    if a_i not in pos:
+        raise HTTPException(400, "その点は極として登録されていません")
+    ws = wavemod.build_waves(r.pivots, r.df, max_recent=10, force_a=pos[a_i])
+    ws = [w for w in ws if "不成立" not in w.note]
+    return JSONResponse({"waves": waves_to_json(ws, r, len(r.df))})
 
 
 @app.post("/api/analyze_csv")

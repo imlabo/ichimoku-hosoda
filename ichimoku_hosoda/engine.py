@@ -206,7 +206,7 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     pivs = swings.pivots(df, zz_thresholds)
     # 進行中の極（最後）は暫定なので三波動の C には使うが rank は 1 のまま
     n = len(df)
-    index_ext = numbers.future_dates(df.index, horizon + 5)
+    index_ext = numbers.future_dates(df.index, max(horizon + 5, 320))  # D 予測日が遠い大きな三波動にも日付を付ける
     pos = lines.position(df, L)
     events = lines.support_resistance_events(df, L)
     ws = waves.build_waves(pivs, df)

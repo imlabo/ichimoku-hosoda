@@ -36,14 +36,38 @@ class Wave3:
         return nearest_basic(bars_between(self.A.i, i_d))
 
 
-def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_back: int = 4) -> list[Wave3]:
-    """直近 max_recent 個の極を C（第二波動の終点）候補とし、起点 A はそれ以前の同種の極から選ぶ。"""
+def _origin_candidates(pivs: list[Pivot], df: pd.DataFrame, ci: int, max_back: int, lookback: int = 400) -> list[int]:
+    """C（pivs[ci]）に対する起点 A の候補 index。
+    ① 直近の同種の極（max_back 個）  ② rank>=3 の重要な極（距離に関係なく）
+    ③ 直近 lookback 本での最安値／最高値の極  — 細田：起点と中心点を変えつつ複数の三波動を確認する。"""
+    C = pivs[ci]
+    cand = set()
+    for ai in range(ci - 2, max(-1, ci - 2 - 2 * max_back), -2):
+        cand.add(ai)
+    for ai in range(ci):
+        if pivs[ai].kind == C.kind and pivs[ai].rank >= 3:
+            cand.add(ai)
+    start = max(0, len(df) - lookback)
+    same = [ai for ai in range(ci) if pivs[ai].kind == C.kind and pivs[ai].i >= start]
+    if same:
+        ext = min(same, key=lambda ai: pivs[ai].price) if C.kind == "L" else max(same, key=lambda ai: pivs[ai].price)
+        cand.add(ext)
+    return sorted(cand, reverse=True)
+
+
+def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_back: int = 4,
+                force_a: int | None = None) -> list[Wave3]:
+    """直近 max_recent 個の極を C（第二波動の終点）候補とし、起点 A は _origin_candidates から選ぶ。
+    force_a を与えると、その極を起点にした三波動のみを返す（手動指定）。"""
     out: list[Wave3] = []
     n = len(pivs)
     hi, lo = df["High"].values, df["Low"].values
     for ci in range(max(2, n - max_recent), n):
         C = pivs[ci]
-        for ai in range(ci - 2, max(-1, ci - 2 - 2 * max_back), -2):
+        a_list = [force_a] if force_a is not None else _origin_candidates(pivs, df, ci, max_back)
+        for ai in a_list:
+            if ai is None or ai >= ci:
+                continue
             A = pivs[ai]
             if A.kind != C.kind:
                 continue
@@ -81,8 +105,15 @@ def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_ba
                 w.achieved = {k: w.extreme_since_c <= v for k, v in w.calc.items()}
                 w.note = "N候補（戻りが起点より下）" if c < a else "戻りが起点を超える→下げ三波動としては不成立"
             out.append(w)
-    out.sort(key=lambda w: -(2 * (w.A.rank + w.C.rank) + min(w.ab + w.bc, 120) / 20 + (3 if w.C.i >= len(df) - 60 else 0)))
-    return out
+    # 同じ A・C の組は 1 つに（B は極値で決まるため重複し得る）
+    uniq, seen = [], set()
+    for w in out:
+        k = (w.A.i, w.C.i)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(w)
+    uniq.sort(key=lambda w: -(2.5 * w.A.rank + 1.5 * w.C.rank + min(w.ab + w.bc, 120) / 20 + (3 if w.C.i >= len(df) - 60 else 0)))
+    return uniq
 
 
 def wave_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bars: int, horizon: int,

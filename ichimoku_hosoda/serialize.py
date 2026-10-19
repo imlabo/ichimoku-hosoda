@@ -39,7 +39,7 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
                  "open": [_f(v) for v in df["Open"]], "high": [_f(v) for v in df["High"]],
                  "low": [_f(v) for v in df["Low"]], "close": [_f(v) for v in df["Close"]]},
         "lines": {"date": [_d(d) for d in L.index]},
-        "pivots": [{"date": _d(p.date), "price": _f(p.price), "kind": p.kind, "rank": p.rank}
+        "pivots": [{"date": _d(p.date), "price": _f(p.price), "kind": p.kind, "rank": p.rank, "i": p.i}
                    for p in res.pivots if p.date >= df.index[0]],
         "levels": [_level(l, res, n) for l in res.levels[:8]],
         "future_dates": [_d(d) for d in res.index_ext[n:n + res.horizon]],
@@ -48,12 +48,13 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "change_dates": [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
                           "n": c["n_sources"], "kinds": c["kinds"], "details": [i.detail for i in c["items"][:6]]}
                          for c in res.change_clusters[:15]],
-        "waves": [{"dir": w.direction, "A": [_d(w.A.date), _f(w.A.price)], "B": [_d(w.B.date), _f(w.B.price)],
+        "waves": [{"dir": w.direction, "A": [_d(w.A.date), _f(w.A.price)], "A_rank": w.A.rank, "A_i": w.A.i, "C_i": w.C.i,
+                   "B": [_d(w.B.date), _f(w.B.price)],
                    "C": [_d(w.C.date), _f(w.C.price)], "ab": w.ab, "bc": w.bc, "ac": w.ac,
                    "calc": {k: _f(v) for k, v in w.calc.items()}, "achieved": w.achieved,
                    "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()},
                    "d_info": [_dinfo(w, k, i, n, res) for k, i in w.d_dates.items()]}
-                  for w in res.waves if "不成立" not in w.note][:8],
+                  for w in res.waves if "不成立" not in w.note][:12],
         "waveform": res.waveform["form"] if res.waveform else None,
         "p_value": ({"A": [_d(res.p_value["A"].date), _f(res.p_value["A"].price)],
                      "B": [_d(res.p_value["B"].date), _f(res.p_value["B"].price)],
@@ -126,3 +127,10 @@ def _level(l, res, n):
             "next_basic": [{"n": b, "date": _d(res.index_ext[l.origin_i + b - 1]) if l.origin_i + b - 1 < len(res.index_ext) else None,
                             "ahead": l.origin_i + b - 1 - (n - 1)} for b in nxt],
             "hits": [{"n": h["n"], "date": _d(h["date"]), "what": h["what"]} for h in l.hits[:10]]}
+
+
+def waves_to_json(waves, res, n):
+    import copy
+    tmp = copy.copy(res)
+    tmp.waves = waves
+    return result_to_json(tmp, bars=10)["waves"]
