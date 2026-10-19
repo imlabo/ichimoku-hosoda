@@ -22,6 +22,20 @@ _cache: dict[tuple, tuple[float, dict]] = {}
 CACHE_SEC = 900
 
 
+INV_NOTE = "値 = 基準×2 − 実際の価格。反転上の『上げ』は実際の下げ、『押し目』は実際の戻り。y 軸目盛とチャート上のラベルは実際の価格"
+
+
+def _with_inverse(src: pd.DataFrame, label: str, unit: str, horizon: int, nbar_specs, zz=None, extra_lag=None, bars=300):
+    kw = dict(nbar_specs=nbar_specs, extra_lag=extra_lag)
+    if zz:
+        kw["zz_thresholds"] = zz
+    normal = result_to_json(analyze(src, label, unit, horizon, **kw), bars=bars)
+    inv_df, ref = data.invert(src)
+    inv = result_to_json(analyze(inv_df, "反転" + label, unit, horizon, **kw), bars=bars)
+    inv["inverted"] = {"ref": ref, "note": INV_NOTE}
+    return normal, inv
+
+
 def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict | None = None,
                 full_df: pd.DataFrame | None = None) -> dict:
     """df: 日足タブに使う範囲、full_df: 週足・月足の作成に使う長期日足（省略時は df）。"""
@@ -32,29 +46,20 @@ def analyze_all(df: pd.DataFrame, name: str, horizon: int = 60, intraday: dict |
         if idf is None or len(idf) < 80:
             out["notes"].append(f"{label}: データ不足または取得不可")
             continue
-        out["frames"][key] = result_to_json(
-            analyze(idf, label, "本", 60, nbar_specs=((3, "3本足"), (9, "9本足"), (26, "26本足")), zz_thresholds=zz), bars=400)
-    out["frames"]["daily"] = result_to_json(
-        analyze(df, "日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足")), extra_lag=3),
-        bars=min(320, len(df)))
-    # 上下反転（下落を上昇として読む）: 同じエンジンを反転データに適用
-    inv_df, ref = data.invert(df)
-    inv = result_to_json(analyze(inv_df, "反転日足", "日", horizon, nbar_specs=((3, "3日足"), (9, "9日足"), (26, "26日足")),
-                                 extra_lag=3), bars=min(320, len(df)))
-    inv["inverted"] = {"ref": ref, "note": "値 = 基準×2 − 実際の価格。反転上の『上げ』は実際の下げ、『押し目』は実際の戻り。y 軸目盛は実際の価格で表示"}
-    out["frames"]["daily_inv"] = inv
+        out["frames"][key], out["frames"][key + "_inv"] = _with_inverse(
+            idf, label, "本", 60, ((3, "3本足"), (9, "9本足"), (26, "26本足")), zz, None, 400)
+    out["frames"]["daily"], out["frames"]["daily_inv"] = _with_inverse(
+        df, "日足", "日", horizon, ((3, "3日足"), (9, "9日足"), (26, "26日足")), None, 3, min(320, len(df)))
     if len(full) >= 60:
         wdf = data.resample(full, "W-FRI")
         if len(wdf) >= 60:
-            out["frames"]["weekly"] = result_to_json(
-                analyze(wdf, "週足", "週", 26, nbar_specs=((9, "9週足"), (26, "26週足")),
-                        zz_thresholds=(0.05, 0.10, 0.20, 0.35), extra_lag=9), bars=260)
+            out["frames"]["weekly"], out["frames"]["weekly_inv"] = _with_inverse(
+                wdf, "週足", "週", 26, ((9, "9週足"), (26, "26週足")), (0.05, 0.10, 0.20, 0.35), 9, 260)
     if len(full) >= 300:
         mdf = data.resample(full, "ME")
         if len(mdf) >= 40:
-            out["frames"]["monthly"] = result_to_json(
-                analyze(mdf, "月足", "ヶ月", 18, nbar_specs=((9, "9ヶ月足"), (26, "26ヶ月足")),
-                        zz_thresholds=(0.08, 0.15, 0.30, 0.50)), bars=200)
+            out["frames"]["monthly"], out["frames"]["monthly_inv"] = _with_inverse(
+                mdf, "月足", "ヶ月", 18, ((9, "9ヶ月足"), (26, "26ヶ月足")), (0.08, 0.15, 0.30, 0.50), None, 200)
     return out
 
 

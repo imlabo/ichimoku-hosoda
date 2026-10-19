@@ -77,7 +77,7 @@ tr.lv{cursor:pointer} tr.lv:hover{background:#f6f0fa} tr.lv.sel{background:#efe4
   <section class="panel" id="side"><p class="muted">ここに総合所見・節目・変化日が表示されます。</p></section>
 </main>
 <script>
-let DATA=null, FRAME='daily';
+let DATA=null, FRAME='daily', INV=false;
 const $=s=>document.querySelector(s);
 const fmt=v=>v==null?'-':v.toLocaleString('ja-JP',{maximumFractionDigits:v<100?3:1});
 const st=(m,err)=>{const e=$('#status');e.textContent=m;e.className=err?'err':''};
@@ -100,11 +100,15 @@ $('#csv').addEventListener('change',async e=>{
 });
 
 function render(){
-  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足',daily_inv:'反転日足'};
-  const order=['m5','h1','daily','weekly','monthly','daily_inv'].filter(k=>DATA.frames[k]);
-  $('#tabs').innerHTML=order.map(k=>`<button class="${k===FRAME?'on':''}" data-k="${k}">${names[k]}</button>`).join('')+(DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');
-  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k;render()});
-  const F=DATA.frames[FRAME]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
+  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足'};
+  const base=FRAME.replace(/_inv$/,'');
+  const order=['m5','h1','daily','weekly','monthly'].filter(k=>DATA.frames[k]);
+  $('#tabs').innerHTML=order.map(k=>`<button class="${k===base?'on':''}" data-k="${k}">${names[k]}</button>`).join('')+
+    `<label style="align-self:center;margin-left:14px;font-size:12px;cursor:pointer;${INV?'color:#1f5f8b;font-weight:600':''}"><input type="checkbox" id="invtoggle" ${INV?'checked':''}> 上下反転</label>`+
+    (DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k+(INV&&DATA.frames[b.dataset.k+'_inv']?'_inv':'');render()});
+  $('#invtoggle').onchange=e=>{INV=e.target.checked; FRAME=base+(INV&&DATA.frames[base+'_inv']?'_inv':''); render()};
+  const F=DATA.frames[FRAME]||DATA.frames[base]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
 }
 let SEL_LEVEL=null;
 ['ly_level','ly_calc','ly_cd','ly_d','ly_piv','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
@@ -220,7 +224,7 @@ function drawSide(F){
   h+=`<h2>三波動構成候補</h2><table><tr><th>向き</th><th>A / B / C</th><th class="num">時間</th><th>計算値（達成）</th><th>D 候補日</th></tr>`+
     F.waves.slice(0,5).map(w=>`<tr><td>${w.dir==='up'?'上げ':'下げ'}</td><td class="muted">${w.A[0]} ${fmt(w.A[1])}<br>${w.B[0]} ${fmt(w.B[1])}<br>${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${Object.entries(w.d_dates).map(([k,v])=>`${k}: ${v||'-'}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
-  if(FRAME==='daily'||FRAME==='daily_inv'){ const M=DATA.margin;
+  if(FRAME.startsWith('daily')){ const M=DATA.margin;
     h+=`<h2>信用残の推移（週次・直近約1か月）</h2>`;
     if(!M||M.error){h+=`<div class="muted">取得できませんでした${M&&M.error?'：'+M.error:''}</div>`}
     else{const rows=M.rows; const last=rows[rows.length-1], first=rows[0];
