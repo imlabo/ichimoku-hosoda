@@ -243,24 +243,33 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     return AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit, extra_lag)
 
 
-def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: str):
-    """チャート上で A・B・C をドラッグして決めた三波動。各点はその足の高値／安値に吸着させる。
+def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: str | None = None,
+                kinds: str | None = None):
+    """チャート上で A・B・C をドラッグして決めた三波動。kinds は各点の 'H'(高値▼)/'L'(安値△)。
+    向きは A→B の値動きで決める（B が A より上なら上げ三波動、下なら下げ三波動）。
     返り値: (Wave3, その三波動だけから出した変化日クラスタ)"""
     df, n, unit, horizon, index_ext = res.df, len(res.df), res.unit, res.horizon, res.index_ext
-    if not (0 <= a_i < b_i <= c_i < n):
+    if not (0 <= a_i < b_i < c_i < n):
         raise ValueError("A → B → C の順に並べてください（A が最も古い日付）")
-    up = direction == "up"
     hi, lo = df["High"].values, df["Low"].values
+    if not kinds or len(kinds) != 3:
+        kinds = "LHL" if direction == "up" else "HLH"
 
     def pt(i, kind):
         p = next((q for q in res.pivots if q.i == i and q.kind == kind), None)
         return swings.Pivot(i, df.index[i], float(hi[i] if kind == "H" else lo[i]), kind, p.rank if p else 1)
 
-    A, B, C = (pt(a_i, "L"), pt(b_i, "H"), pt(c_i, "L")) if up else (pt(a_i, "H"), pt(b_i, "L"), pt(c_i, "H"))
+    A, B, C = (pt(i, k) for i, k in zip((a_i, b_i, c_i), kinds.upper()))
+    if B.price == A.price:
+        raise ValueError("A と B が同じ値段です")
+    direction = "up" if B.price > A.price else "down"
+    up = direction == "up"
     w = waves._mk_wave(A, B, C, direction, df)
     w.tag = "手動（ドラッグで指定）"
     if (up and C.price <= A.price) or (not up and C.price >= A.price):
         w.note += "／注意: C が A を越えている（三波動の形になっていません）"
+    elif (up and C.price >= B.price) or (not up and C.price <= B.price):
+        w.note += "／注意: C が B を越えている（押し・戻りになっていません）"
     cands = []
     for c in numbers.basic_change_dates([A, B, C], index_ext, n, horizon, unit=unit):
         c.detail = "【手動】" + c.detail

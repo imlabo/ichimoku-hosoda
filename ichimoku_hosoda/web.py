@@ -165,11 +165,11 @@ def _get_result(code: str, frame: str, period: str):
 
 
 @app.get("/api/wave_custom")
-def api_wave_custom(code: str, frame: str, a: int, b: int, c: int, dir: str, period: str = "6y"):
+def api_wave_custom(code: str, frame: str, a: int, b: int, c: int, dir: str = "", kinds: str = "", period: str = "6y"):
     """チャート上で A・B・C をドラッグして指定した三波動（a/b/c は足の位置）。計算値・D・変化日を返す。"""
     r = _get_result(code, frame, period)
     try:
-        w, cl = manual_wave(r, a, b, c, "up" if dir == "up" else "down")
+        w, cl = manual_wave(r, a, b, c, dir or None, kinds or None)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     wj = waves_to_json([w], r, len(r.df))[0]
