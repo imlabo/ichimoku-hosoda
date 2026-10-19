@@ -135,7 +135,10 @@ function render(){
     `<label style="align-self:center;margin-left:14px;font-size:12px;cursor:pointer;${INV?'color:#1f5f8b;font-weight:600':''}"><input type="checkbox" id="invtoggle" ${INV?'checked':''}> 上下反転</label>`+
     (DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k+(INV&&DATA.frames[b.dataset.k+'_inv']?'_inv':'');SEL_WAVE=0;render()});
-  $('#invtoggle').onchange=e=>{INV=e.target.checked; FRAME=base+(INV&&DATA.frames[base+'_inv']?'_inv':''); SEL_WAVE=0; render()};
+  $('#invtoggle').onchange=e=>{
+    // 動かしたが未計算の A・B・C も反転先へ持っていく（同じ足、高値⇔安値を入れ替え）
+    if(PEND&&ABC&&PEND.key===ABC.key){const ref=refOf(base); if(ref!=null) CARRY={x:PEND.x.slice(), full:PEND.full.slice(), out:PEND.out.slice(), kind:PEND.kind.map(k=>k==='H'?'L':'H'), real:PEND.real.map(v=>2*ref-v)}}
+    INV=e.target.checked; FRAME=base+(INV&&DATA.frames[base+'_inv']?'_inv':''); SEL_WAVE=0; render()};
   const F=DATA.frames[FRAME]||DATA.frames[base]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
   ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
@@ -220,6 +223,7 @@ function drawChart(F){
     // 動かしたが未計算の位置があれば復元
     ABC.key=FRAME+'|'+SEL_WAVE+'|'+selW.A_i+'|'+selW.C_i;
     ABC.kind=selW.dir==='up'?['L','H','L']:['H','L','H'];
+    if(CARRY){ PEND=Object.assign({key:ABC.key},CARRY); CARRY=null }
     if(PEND&&PEND.key===ABC.key){ ['x','full','real','out','kind'].forEach(k=>ABC[k]=PEND[k].slice()) }
     ABC.yl=ymin-span*.07; ABC.yh=ymax+span*.11; ABC.y=ABC.real.map(v=>Math.max(ABC.yl,Math.min(ABC.yh,v)));
     // 吸着先 = チャート上の ▲▼（表示中の高値・安値）
@@ -264,7 +268,7 @@ function drawChart(F){
 }
 
 // ---- A・B・C のドラッグ（▲▼ の位置にだけ吸着）→「再計算」ボタンで計算
-let ABC=null, DRAG=null, PEND=null;
+let ABC=null, DRAG=null, PEND=null, CARRY=null;
 function abcPx(gd){const xa=gd._fullLayout.xaxis, ya=gd._fullLayout.yaxis, tr=gd.data[ABC.ti];
   return tr.x.map((x,k)=>({px:xa._offset+xa.l2p(ABC.allDates.indexOf(x)), py:ya._offset+ya.l2p(tr.y[k])}))}
 function updRecalc(){const on=!!(PEND&&ABC&&PEND.key===ABC.key); $('#recalc').disabled=!on;
@@ -312,23 +316,40 @@ $('#recalc').onclick=recalc;
 
 // ---- 手動の A・B・C を銘柄・足種ごとに保存（このブラウザ内）。上下反転チャートにも同じ点を引き継ぐ
 const swapK=k=>k.split('').map(x=>x==='H'?'L':'H').join('');
-const abcStore=()=>{try{return JSON.parse(localStorage.getItem('abc:'+DATA.name)||'{}')}catch(e){return {}}};
-const abcSave=o=>{try{localStorage.setItem('abc:'+DATA.name,JSON.stringify(o))}catch(e){}};
+const MEM={};   // ブラウザ保存が使えない環境でも、開いている間は保持
+const abcStore=()=>{let o=null; try{o=JSON.parse(localStorage.getItem('abc:'+DATA.name)||'null')}catch(e){} return o||Object.assign({},MEM[DATA.name]||{})};
+const abcSave=o=>{MEM[DATA.name]=Object.assign({},o); try{localStorage.setItem('abc:'+DATA.name,JSON.stringify(o))}catch(e){}};
+const refOf=base=>{const f=DATA.frames[base+'_inv']||DATA.frames[base]; return f&&f.inverted?f.inverted.ref:null};
+// 通常⇔反転の三波動をブラウザ内で写す（同じ足・同じ日付、値段は 2×基準−値段、高値⇔安値）
+function mirrorWave(w,ref){const m=v=>v==null?v:2*ref-v, sw=t=>t==='高値'?'安値':t==='安値'?'高値':t, x=JSON.parse(JSON.stringify(w));
+  x.dir=w.dir==='up'?'down':'up'; ['A','B','C'].forEach(k=>x[k]=[w[k][0],m(w[k][1])]);
+  x.calc={}; for(const k in w.calc) x.calc[k]=m(w.calc[k]); if(w.kinds) x.kinds=swapK(w.kinds);
+  if(w.half){const h=w.half, y=x.half; y.price=m(h.price); y.upper=m(h.lower); y.lower=m(h.upper); y.hi_since=m(h.lo_since); y.lo_since=m(h.hi_since);
+    y.rel=h.rel==='above'?'below':'above'; y.pct=-h.pct; y.hits=h.hits.map(t=>Object.assign({},t,{what:sw(t.what)}));
+    if(h.range) y.range=Object.assign({},h.range,{hi:m(h.range.lo),hi_date:h.range.lo_date,lo:m(h.range.hi),lo_date:h.range.hi_date})}
+  return x}
 function saveManual(fk,w){const base=fk.replace(/_inv$/,''), o=abcStore();
   o[base]={dates:[w.A[0],w.B[0],w.C[0]], kinds:fk.endsWith('_inv')?swapK(w.kinds):w.kinds}; abcSave(o);
-  const F=DATA.frames[fk]; if(F) F._msig=JSON.stringify(o[base]);
-  const other=DATA.frames[fk.endsWith('_inv')?base:base+'_inv']; if(other){other.waves=other.waves.filter(x=>!x.manual); other._msig=null}}
+  const sig=JSON.stringify(o[base]), F=DATA.frames[fk]; if(F) F._msig=sig;
+  const ok=fk.endsWith('_inv')?base:base+'_inv', other=DATA.frames[ok], ref=refOf(base);
+  if(other){ other.waves=other.waves.filter(x=>!x.manual); other._msig=null;
+    if(ref!=null){ other.waves=[mirrorWave(w,ref)].concat(other.waves); other._msig=sig } }}
 async function ensureManual(fk){
   const F=DATA.frames[fk]; if(!F) return; const base=fk.replace(/_inv$/,''), sv=abcStore()[base];
   $('#clearabc').style.display=sv?'inline-block':'none';
-  if(!sv){return} const sig=JSON.stringify(sv); if(F._msig===sig) return; F._msig=sig;
+  if(!sv){return} const sig=JSON.stringify(sv); if(F._msig===sig) return;
+  // 反対側（通常／反転）で計算済みなら、サーバーに聞かずに写して即表示
+  const sib=DATA.frames[fk.endsWith('_inv')?base:base+'_inv'], ref=refOf(base), mw=sib&&sib._msig===sig&&sib.waves.find(w=>w.manual);
+  if(mw&&ref!=null){ F.waves=[mirrorWave(mw,ref)].concat(F.waves.filter(w=>!w.manual)); F._msig=sig;
+    if(FRAME===fk){SEL_WAVE=0; drawChart(F); drawSide(F)} return }
+  F._msig=sig;
   const kinds=fk.endsWith('_inv')?swapK(sv.kinds):sv.kinds;
   try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim()||DATA.input||DATA.name)}&frame=${fk}&period=${$('#period').value}&dates=${encodeURIComponent(sv.dates.join(','))}&kinds=${kinds}`);
     const j=await r.json(); if(!r.ok) throw new Error(j.detail);
     F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual));
     if(FRAME===fk||(!DATA.frames[FRAME]&&base===fk)){SEL_WAVE=0; PEND=null; drawChart(F); drawSide(F)}
     st(`保存してある手動の A・B・C（${sv.dates.join(' → ')}）を表示しています`)
-  }catch(e){st('保存した A・B・C を再現できませんでした: '+e.message,true)}}
+  }catch(e){F._msig=null; st('保存した A・B・C を再現できませんでした: '+e.message,true)}}
 $('#clearabc').onclick=()=>{const base=FRAME.replace(/_inv$/,''), o=abcStore(); delete o[base]; abcSave(o);
   [base,base+'_inv'].forEach(k=>{const F=DATA.frames[k]; if(F){F.waves=F.waves.filter(w=>!w.manual); F._msig=null}});
   SEL_WAVE=0; PEND=null; render(); st('手動の A・B・C を解除しました（定型の三波動に戻しました）')};
