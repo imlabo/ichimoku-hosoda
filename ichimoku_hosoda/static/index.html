@@ -80,6 +80,8 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
   <label><input type="checkbox" id="ly_d" checked> D予測日</label>
   <label><input type="checkbox" id="ly_piv" checked> 高値安値ラベル</label>
   　本数: <select id="bars"><option value="120">120</option><option value="200" selected>200</option><option value="320">320</option></select>
+  <button id="recalc" disabled style="margin-left:14px;padding:4px 12px;font-size:12px;border-color:#b03a2e;color:#b03a2e;cursor:pointer">A・B・C で再計算</button>
+  <span id="recalcnote" class="muted"></span>
 </div>
 <main>
   <section class="panel"><div id="chart"></div><div class="muted" id="legendnote">紫点線＝相場水準候補、橙の縦線＝変化日候補（数字はスコア）、▲▼＝高値・安値（大きいほど重要）</div></section>
@@ -206,10 +208,15 @@ function drawChart(F){
     ABC={ti:traces.length, F, o, base:(F.ohlc_from||0)+from, allDates, dir:selW.dir, full:[selW.A_i,selW.B_i,selW.C_i],
          x:[clip(selW.A[0]),clip(selW.B[0]),clip(selW.C[0])], out, rp, real:[selW.A[1],selW.B[1],selW.C[1]]};
     // 表示範囲外の点は枠の端に寄せて描く（つかんで動かせるように）
-    const yl=ymin-span*.07, yh=ymax+span*.11; ABC.y=ABC.real.map(v=>Math.max(yl,Math.min(yh,v)));
+    // 動かしたが未計算の位置があれば復元
+    ABC.key=FRAME+'|'+SEL_WAVE+'|'+selW.A_i+'|'+selW.C_i;
+    if(PEND&&PEND.key===ABC.key){ ['x','full','real','out'].forEach(k=>ABC[k]=PEND[k].slice()) }
+    ABC.yl=ymin-span*.07; ABC.yh=ymax+span*.11; ABC.y=ABC.real.map(v=>Math.max(ABC.yl,Math.min(ABC.yh,v)));
+    // 吸着先 = チャート上の ▲▼（表示中の高値・安値）
+    ABC.piv={H:F.pivots.filter(p=>p.kind==='H'&&p.rank>=2&&inWin(p.date)), L:F.pivots.filter(p=>p.kind==='L'&&p.rank>=2&&inWin(p.date))};
     traces.push({x:ABC.x.slice(),y:ABC.y.slice(),mode:'lines+markers+text',type:'scatter',name:`三波動 A-B-C${selW.manual?'（手動）':''}（起点 ${selW.A[0]}${out[0]?'・表示範囲外':''}）`,
-      text:['A'+(out[0]?'←範囲外':''),'B'+(out[1]?'←範囲外':''),'C'],textposition:'middle right',textfont:{size:13,color:col},line:{color:col,width:2},
-      customdata:ABC.real.map(rp),marker:{size:13,color:col,line:{color:'#fff',width:2}},hovertemplate:'%{text} %{x}<br>%{customdata:,.1f}<br>（ドラッグで移動）<extra></extra>'});
+      text:['A','B','C'].map((l,j)=>l+(ABC.out[j]?'←範囲外':'')),textposition:'middle right',textfont:{size:13,color:col},line:{color:col,width:2,dash:PEND&&PEND.key===ABC.key?'dash':'solid'},
+      customdata:ABC.real.map(rp),marker:{symbol:'circle-open',size:17,color:col,line:{color:col,width:3}},hovertemplate:'%{text} %{x}<br>%{customdata:,.1f}<br>（ドラッグで移動）<extra></extra>'});
   }
   // ---- 変化日（上位5件、将来のみ）: 線は下 1/3、ラベルは下端に段差
   if(LY('ly_cd')){
@@ -230,6 +237,7 @@ function drawChart(F){
     margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
     yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[ymin-span*.08,ymax+span*.12]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
     hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false});
+  updRecalc();
   const gd=$('#chart'); setupDrag(gd); gd.removeAllListeners&&gd.removeAllListeners('plotly_click');
   gd.on('plotly_click',async ev=>{const pt=ev.points&&ev.points[0]; if(!pt||!(pt.data.name==='高値'||pt.data.name==='安値')) return;
     const piv=F.pivots.find(p=>p.date===pt.x&&Math.abs(p.price-pt.y)<1e-6); if(!piv) return;
@@ -240,19 +248,21 @@ function drawChart(F){
       const key=w=>w.A[0]+'|'+w.C[0]; const have=new Set(F.waves.map(key));
       const add=j.waves.filter(w=>!have.has(key(w))); F.waves=add.concat(F.waves); SEL_WAVE=0; drawChart(F); drawSide(F);
       st(`起点 ${piv.date} の三波動 ${j.waves.length} 件を追加（先頭に表示）`)}catch(e){st(e.message,true)}});
-  $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側）／赤・青の長破線＝未達の計算値の集中、茶色＝選択中の三波動の計算値。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで移動できる（足の高値・安値に吸着し、計算値・D・変化日を引き直す）';
+  $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側）／赤・青の長破線＝未達の計算値の集中、茶色＝選択中の三波動の計算値。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
 }
 
-// ---- A・B・C のドラッグ
-let ABC=null, DRAG=null;
+// ---- A・B・C のドラッグ（▲▼ の位置にだけ吸着）→「再計算」ボタンで計算
+let ABC=null, DRAG=null, PEND=null;
 function abcPx(gd){const xa=gd._fullLayout.xaxis, ya=gd._fullLayout.yaxis, tr=gd.data[ABC.ti];
   return tr.x.map((x,k)=>({px:xa._offset+xa.l2p(ABC.allDates.indexOf(x)), py:ya._offset+ya.l2p(tr.y[k])}))}
+function updRecalc(){const on=!!(PEND&&ABC&&PEND.key===ABC.key); $('#recalc').disabled=!on;
+  $('#recalcnote').textContent=on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?'A・B・C の丸をドラッグして ▲▼ の位置へ動かせます':'')}
 function setupDrag(gd){
   if(gd._abcDrag) return; gd._abcDrag=true;
   const rel=e=>{const r=gd.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]};
-  const hit=e=>{ if(!ABC||!gd._fullLayout||!gd.data[ABC.ti]) return -1; const [mx,my]=rel(e); let best=-1, bd=14;
+  const hit=e=>{ if(!ABC||!gd._fullLayout||!gd.data[ABC.ti]) return -1; const [mx,my]=rel(e); let best=-1, bd=16;
     abcPx(gd).forEach((p,k)=>{const d=Math.hypot(p.px-mx,p.py-my); if(d<bd){bd=d;best=k}}); return best};
-  const kindOf=k=>(ABC.dir==='up')===(k!==1)?'low':'high';   // 上げ: A安値・B高値・C安値／下げ: 逆
+  const kindOf=k=>(ABC.dir==='up')===(k!==1)?'L':'H';   // 上げ: A安値・B高値・C安値／下げ: 逆
   const setCursor=c=>{const el=gd.querySelector('.nsewdrag'); if(el) el.style.cursor=c};
   gd.addEventListener('pointerdown',e=>{const k=hit(e); if(k<0) return;
     e.preventDefault(); e.stopPropagation(); DRAG={k, moved:false}; setCursor('grabbing')},true);
@@ -260,23 +270,34 @@ function setupDrag(gd){
   window.addEventListener('pointermove',e=>{
     if(!DRAG){ if(e.target&&gd.contains(e.target)) setCursor(hit(e)>=0?'grab':''); return }
     e.preventDefault();
-    const xa=gd._fullLayout.xaxis, [mx]=rel(e), o=ABC.o;
-    let xi=Math.round(xa.p2l(mx-xa._offset)); xi=Math.max(0,Math.min(o.date.length-1,xi));
-    const k=DRAG.k, y=kindOf(k)==='low'?o.low[xi]:o.high[xi];
-    ABC.x[k]=o.date[xi]; ABC.y[k]=y; ABC.real[k]=y; ABC.full[k]=ABC.base+xi; ABC.out[k]=false; DRAG.moved=true;
+    const xa=gd._fullLayout.xaxis, [mx]=rel(e), k=DRAG.k, kind=kindOf(k), cands=ABC.piv[kind];
+    if(!cands.length) return;
+    const xm=xa.p2l(mx-xa._offset);
+    let p=cands[0], bd=1e9; cands.forEach(q=>{const d=Math.abs(ABC.allDates.indexOf(q.date)-xm); if(d<bd){bd=d;p=q}});
+    if(ABC.full[k]===p.i&&DRAG.moved) return;
+    ABC.x[k]=p.date; ABC.real[k]=p.price; ABC.y[k]=Math.max(ABC.yl,Math.min(ABC.yh,p.price)); ABC.full[k]=p.i; ABC.out[k]=false; DRAG.moved=true;
     const lab=['A','B','C'];
-    Plotly.update(gd,{x:[ABC.x.slice()],y:[ABC.y.slice()],customdata:[ABC.real.map(ABC.rp)],text:[lab.map((l,j)=>l+(ABC.out[j]?'←範囲外':''))]},{'xaxis.type':'category'},[ABC.ti]);
-    st(`${lab[k]} を ${o.date[xi]} の${kindOf(k)==='low'?'安値':'高値'} ${fmt(ABC.rp(y))} へ（離すと再計算）`)},{passive:false});
-  window.addEventListener('pointerup',async()=>{ if(!DRAG) return; const d=DRAG; DRAG=null; setCursor(''); if(!d.moved) return;
-    const [a,b,c]=ABC.full, F=ABC.F;
-    if(!(a<b&&b<=c)){st('A → B → C の順（A が最も古い）に並ぶように置いてください',true); drawChart(F); return}
-    st('指定した A・B・C で計算値・D・変化日を計算中…');
-    try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&dir=${ABC.dir}`);
-      const j=await r.json(); if(!r.ok) throw new Error(j.detail);
-      F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); SEL_WAVE=0; drawChart(F); drawSide(F);
-      st(`手動の三波動: A ${j.wave.A[0]} → B ${j.wave.B[0]} → C ${j.wave.C[0]}${j.wave.note&&j.wave.note.includes('注意')?'（C が A を越えています）':''}`, j.wave.note&&j.wave.note.includes('注意'))
-    }catch(err){st(err.message,true); drawChart(F)}});
+    Plotly.update(gd,{x:[ABC.x.slice()],y:[ABC.y.slice()],customdata:[ABC.real.map(ABC.rp)],text:[lab.map((l,j)=>l+(ABC.out[j]?'←範囲外':''))],'line.dash':'dash'},{'xaxis.type':'category'},[ABC.ti]);
+    st(`${lab[k]} → ${p.date} の${kind==='L'?'安値':'高値'} ${fmt(ABC.rp(p.price))}`)},{passive:false});
+  window.addEventListener('pointerup',()=>{ if(!DRAG) return; const d=DRAG; DRAG=null; setCursor(''); if(!d.moved) return;
+    PEND={key:ABC.key, x:ABC.x.slice(), full:ABC.full.slice(), real:ABC.real.slice(), out:ABC.out.slice()}; updRecalc();
+    const [a,b,c]=ABC.full;
+    if(!(a<b&&b<c)) st('A → B → C の順（A が最も古い）に並ぶように置いてください',true);
+    else st('位置を変えました。「A・B・C で再計算」を押すと変化日・計算値・D を引き直します')});
 }
+async function recalc(){
+  if(!PEND||!ABC||PEND.key!==ABC.key) return;
+  const [a,b,c]=PEND.full, F=ABC.F, dir=ABC.dir;
+  if(!(a<b&&b<c)){st('A → B → C の順（A が最も古い）に並ぶように置いてください',true); return}
+  $('#recalc').disabled=true; st('指定した A・B・C で計算値・D・変化日を計算中…');
+  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&dir=${dir}`);
+    const j=await r.json(); if(!r.ok) throw new Error(j.detail);
+    PEND=null; F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); SEL_WAVE=0; drawChart(F); drawSide(F);
+    const warn=j.wave.note&&j.wave.note.includes('注意');
+    st(`再計算しました：A ${j.wave.A[0]} ${fmt(ABC.rp(j.wave.A[1]))} → B ${j.wave.B[0]} ${fmt(ABC.rp(j.wave.B[1]))} → C ${j.wave.C[0]} ${fmt(ABC.rp(j.wave.C[1]))}${warn?'（C が A を越えています）':''}`, warn)
+  }catch(err){st(err.message,true); updRecalc()}
+}
+$('#recalc').onclick=recalc;
 
 function drawSide(F){
   const u=F.unit, c=F.close, u_=u;
@@ -316,7 +337,7 @@ function drawSide(F){
         row('E',`B ${sg} (B−A) = ${fmt(b)} ${sg} ${fmt(ab)}`,w.calc.E)+row('N',`C ${sg} (B−A) = ${fmt(c)} ${sg} ${fmt(ab)}`,w.calc.N)+
         row('V',`B ${sg} (B−C) = ${fmt(b)} ${sg} ${fmt(bc)}`,w.calc.V)+row('NT',`C ${sg} (C−A) = ${fmt(c)} ${sg} ${fmt(ac)}`,w.calc.NT)+'</table>'}).join('')+
     (F.p_value?`<div style="margin:8px 0 4px"><b>P 計算値</b> <span class="muted">内はらみ：高値 ${F.p_value.A[0]} ${fmt(F.p_value.A[1])} → 高値 ${F.p_value.B[0]} ${fmt(F.p_value.B[1])}、安値 ${F.p_value.C[0]} ${fmt(F.p_value.C[1])}</span></div><table><tr><td><span class="tag">P</span></td><td class="muted">C + (A−B)</td><td class="num"><b>${fmt(F.p_value.P)}</b></td><td class="muted">上放れの目処</td></tr><tr><td><span class="tag">P</span></td><td class="muted">C − (A−B)</td><td class="num"><b>${fmt(F.p_value.P_down)}</b></td><td class="muted">割り込めば下げ三波動を考える</td></tr></table>`:'');
-  h+=`<h2>三波動構成候補（起点 A を変えた複数案）</h2><div class="verdict" style="background:#fbf3e6;border-left-color:#8a5a1e;margin-bottom:6px"><b>定型の決め方</b>：下げ三波動＝A 期間の最高値 → B A 以降の最安値 → C B 以降の最高値。上げ三波動＝A 期間の最安値 → B A 以降の最高値 → C B 以降の最安値。期間は「表示期間全体」「直近250本」「直近120本」で当て、<span class="tag" style="background:#8a5a1e;color:#fff">定型</span> として先頭に並べます。B が直近で更新中（第三波動が進行中）のときは、最も深い押し（戻り）の直前の山（谷）を B、その押しの底を C とします。変化日候補はこの A・B・C からの基本数値・対等数値と D 予測日を最優先で数えています。</div><div class="muted" style="margin-bottom:6px">細田：起点と中心点をその時々に変えつつ、結果的に何らかの三波動を確認する。重要な高値・安値（★の数＝重要度）と期間の最安値・最高値は距離に関係なく起点候補に含めています。行をクリックで選択（チャートの A-B-C・計算値・D が切り替わる）。チャートの▲▼クリックで任意の点を起点にできます。チャート上の A・B・C の丸をドラッグすると自分で三波動を決められ、<span class="tag" style="background:#b03a2e;color:#fff">手動</span> として先頭に入ります。</div>`+
+  h+=`<h2>三波動構成候補（起点 A を変えた複数案）</h2><div class="verdict" style="background:#fbf3e6;border-left-color:#8a5a1e;margin-bottom:6px"><b>定型の決め方</b>：下げ三波動＝A 期間の最高値 → B A 以降の最安値 → C B 以降の最高値。上げ三波動＝A 期間の最安値 → B A 以降の最高値 → C B 以降の最安値。期間は「表示期間全体」「直近250本」「直近120本」で当て、<span class="tag" style="background:#8a5a1e;color:#fff">定型</span> として先頭に並べます。B が直近で更新中（第三波動が進行中）のときは、最も深い押し（戻り）の直前の山（谷）を B、その押しの底を C とします。変化日候補はこの A・B・C からの基本数値・対等数値と D 予測日を最優先で数えています。</div><div class="muted" style="margin-bottom:6px">細田：起点と中心点をその時々に変えつつ、結果的に何らかの三波動を確認する。重要な高値・安値（★の数＝重要度）と期間の最安値・最高値は距離に関係なく起点候補に含めています。行をクリックで選択（チャートの A-B-C・計算値・D が切り替わる）。チャートの▲▼クリックで任意の点を起点にできます。チャート上の A・B・C の丸をドラッグして ▲▼ の位置へ動かし、「A・B・C で再計算」を押すと自分で決めた三波動として計算され、<span class="tag" style="background:#b03a2e;color:#fff">手動</span> として先頭に入ります。</div>`+
     `<table><tr><th></th><th>向き</th><th>起点 A</th><th>B / C</th><th class="num">時間</th><th>計算値（達成）</th><th>D 予測日</th></tr>`+
     F.waves.slice(0,12).map((w,i)=>`<tr class="wv${i===SEL_WAVE?' sel':''}" data-i="${i}" style="cursor:pointer"><td>${i===SEL_WAVE?'▶':''}</td><td>${w.manual?'<span class="tag" style="background:#b03a2e;color:#fff">手動</span><br>':w.tag?'<span class="tag" style="background:#8a5a1e;color:#fff">定型</span><br>':''}${w.dir==='up'?'上げ':'下げ'}${w.tag&&!w.manual?`<div class="muted" style="font-size:10.5px;max-width:110px">${w.tag.replace(/^定型/,'')}</div>`:''}</td><td><b>${w.A[0]}</b><br>${fmt(w.A[1])} ${'★'.repeat(w.A_rank||1)}</td><td class="muted">B ${w.B[0]} ${fmt(w.B[1])}<br>C ${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${w.d_info.map(d=>`${d.rel}: ${d.date||'-'}${d.offset>=0?` (+${d.offset}${u})`:''}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
@@ -337,7 +358,7 @@ function drawSide(F){
       if(M.source&&M.source!=='synthetic') h+=`<div class="muted">出所: ${M.source}</div>`}}
   h+=`<details><summary>テキストレポート全文（細田理論の注記付き）</summary><div class="md">${mdToHtml(F.markdown)}</div></details>`;
   $('#side').innerHTML=h;
-  $('#side').querySelectorAll('tr.wv').forEach(r=>r.onclick=()=>{SEL_WAVE=+r.dataset.i; drawChart(F); drawSide(F)});
+  $('#side').querySelectorAll('tr.wv').forEach(r=>r.onclick=()=>{SEL_WAVE=+r.dataset.i; PEND=null; drawChart(F); drawSide(F)});
   $('#side').querySelectorAll('tr.lv').forEach(r=>r.onclick=()=>{const p=+r.dataset.p; SEL_LEVEL=SEL_LEVEL===p?null:p; drawChart(F); $('#side').querySelectorAll('tr.lv').forEach(x=>x.classList.toggle('sel',+x.dataset.p===SEL_LEVEL))});
 }
 const niceStep=x=>{const p=Math.pow(10,Math.floor(Math.log10(x))); const m=x/p; return (m<1.5?1:m<3.5?2:m<7.5?5:10)*p};
