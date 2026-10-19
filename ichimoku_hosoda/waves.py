@@ -55,14 +55,15 @@ def _origin_candidates(pivs: list[Pivot], df: pd.DataFrame, ci: int, max_back: i
     return sorted(cand, reverse=True)
 
 
-def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_back: int = 4,
+def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 20, max_back: int = 4,
                 force_a: int | None = None) -> list[Wave3]:
     """直近 max_recent 個の極を C（第二波動の終点）候補とし、起点 A は _origin_candidates から選ぶ。
     force_a を与えると、その極を起点にした三波動のみを返す（手動指定）。"""
     out: list[Wave3] = []
     n = len(pivs)
     hi, lo = df["High"].values, df["Low"].values
-    for ci in range(max(2, n - max_recent), n):
+    c_idx = sorted(set(range(max(2, n - max_recent), n)) | {k for k in range(2, n) if pivs[k].rank >= 3})
+    for ci in c_idx:
         C = pivs[ci]
         a_list = [force_a] if force_a is not None else _origin_candidates(pivs, df, ci, max_back)
         for ai in a_list:
@@ -125,6 +126,14 @@ def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 8, max_ba
             sc += 4            # 期間の最安値（最高値）を起点とする三波動は常に見るべき
         if w.C.i >= n_bars - 60:
             sc += 3            # C が直近
+        # C が B 以降の最大の戻り（上げなら最深の押し）なら自然な第二波動
+        after = [p for p in pivs if p.i > w.B.i and p.kind == w.C.kind]
+        if after:
+            nat = max(after, key=lambda p: p.price) if w.direction == "down" else min(after, key=lambda p: p.price)
+            if nat.i == w.C.i:
+                sc += 3
+        if w.A.i < start:
+            sc -= 3            # 起点が表示・評価範囲より前
         ab_px, bc_px = abs(w.B.price - w.A.price), abs(w.C.price - w.B.price)
         if ab_px >= bc_px:
             sc += 2            # 第一波動の値幅が第二波動より大きい（N 型として自然）

@@ -164,8 +164,9 @@ function drawChart(F){
       shapes.push({type:'line',xref:'paper',x0:0.6,x1:1,y0:x.price,y1:x.price,line:{color:col[k]||'#555',width:1.2,dash:'longdash'}});
       ann.push({xref:'paper',x:0.61,y:x.price,text:`${x.kinds} ${fmt(rp(x.price))}${x.n>1?' ×'+x.n:''}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col[k]||'#555'}})});
     const w=F.waves[SEL_WAVE]||F.waves[0];
-    if(w){ traces.push({x:[w.A[0],w.B[0],w.C[0]],y:[w.A[1],w.B[1],w.C[1]],mode:'lines+markers+text',type:'scatter',name:`三波動 A-B-C（起点 ${w.A[0]}）`,
-      text:['A','B','C'],textposition:'middle right',textfont:{size:12,color:'#8a5a1e'},line:{color:'#8a5a1e',width:2},marker:{size:8,color:'#8a5a1e'},hovertemplate:'%{text} %{x}<br>%{y:,.1f}<extra></extra>'});
+    if(w){ const first=o.date[0], clip=d=>d<first?first:d, out=[w.A[0],w.B[0],w.C[0]].map(d=>d<first);
+      traces.push({x:[clip(w.A[0]),clip(w.B[0]),clip(w.C[0])],y:[w.A[1],w.B[1],w.C[1]],mode:'lines+markers+text',type:'scatter',name:`三波動 A-B-C（起点 ${w.A[0]}${out[0]?'・表示範囲外':''}）`,
+      text:['A'+(out[0]?'←範囲外':''),'B'+(out[1]?'←範囲外':''),'C'],textposition:'middle right',textfont:{size:12,color:'#8a5a1e'},line:{color:'#8a5a1e',width:2},marker:{size:8,color:'#8a5a1e'},hovertemplate:'%{text} %{x}<br>%{y:,.1f}<extra></extra>'});
       // 選択中の三波動の計算値（E/N/V/NT）を右端に短く
       Object.entries(w.calc).forEach(([k,v],j)=>{ if(v<ymin-span*.1||v>ymax+span*.12) return;
         shapes.push({type:'line',xref:'paper',x0:0.78,x1:1,y0:v,y1:v,line:{color:'#8a5a1e',width:1.4,dash:w.achieved[k]?'dot':'solid'}});
