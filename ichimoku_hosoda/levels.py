@@ -84,7 +84,7 @@ def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: 
 
 
 def half_level(df: pd.DataFrame, i0: int, i1: int, label: str) -> Level | None:
-    """df[i0..i1] の高値・安値の半値。起点は、期間の始まり（i0）から時間軸を過去へさかのぼって
+    """df[i0..i1] の高値・安値の半値。起点は、期間の始まりの極（高値・安値の先に付いた方）から時間軸を過去へさかのぼって
     最初にその値段を付けた足（まとめ資料 III-1 の図の A）。過去に無ければ期間内で最初に付けた足。"""
     n = len(df)
     i0, i1 = max(0, i0), min(n - 1, i1)
@@ -95,7 +95,7 @@ def half_level(df: pd.DataFrame, i0: int, i1: int, label: str) -> Level | None:
     jh, jl = i0 + int(np.argmax(seg_hi)), i0 + int(np.argmin(seg_lo))
     mid = (hi[jh] + lo[jl]) / 2
     o, how = None, "さかのぼって最初に到達"
-    for k in range(i0, -1, -1):
+    for k in range(min(jh, jl), -1, -1):   # 期間の高値・安値のうち先に付いた方（＝期間の始まりの極）からさかのぼる
         if lo[k] <= mid <= hi[k]:
             o = k
             break
@@ -123,7 +123,7 @@ def half_levels(df: pd.DataFrame, ranges: list[tuple[int, int, str]] | None = No
         lv = half_level(df, i0, i1, lab)
         if lv is None:
             continue
-        dup = next((x for x in out if abs(x.price - lv.price) / lv.price <= 0.004 and x.origin_i == lv.origin_i), None)
+        dup = next((x for x in out if abs(x.price - lv.price) / lv.price <= 0.004 and x.origin_i == lv.origin_i), None)   # 高値・安値が同じ期間は 1 本にまとまる
         if dup is None:
             out.append(lv)
     return out
