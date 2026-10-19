@@ -7,7 +7,7 @@
   ④ 重要な変化日に高値・安値となった足
   ⑤ 変化日・計算値で反応がなかった位置（本実装では三波動の計算値未達で経過した C を候補に）
   ⑥ 半値水準（まとめ資料 III-1）：ある期間の高値と安値の半値を出し、その期間内で初めてその値段に
-     到達した日（図の A）を起点とする。起点からの基本数値日は 高値・安値・水準そのものに止まりやすい
+     期間の始まりから過去へさかのぼって最初にその値段を付けた日（図の A）を起点とする。起点からの基本数値日は 高値・安値・水準そのものに止まりやすい
 評価：水準を付けた起点からの基本数値日に、同水準・高値・安値が出ているか。
 限界値：水準×2 − 反対側の極値。
 """
@@ -84,7 +84,8 @@ def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: 
 
 
 def half_level(df: pd.DataFrame, i0: int, i1: int, label: str) -> Level | None:
-    """df[i0..i1] の高値・安値の半値と、その期間で初めて半値に到達した足（起点）。"""
+    """df[i0..i1] の高値・安値の半値。起点は、期間の始まり（i0）から時間軸を過去へさかのぼって
+    最初にその値段を付けた足（まとめ資料 III-1 の図の A）。過去に無ければ期間内で最初に付けた足。"""
     n = len(df)
     i0, i1 = max(0, i0), min(n - 1, i1)
     if i1 - i0 < 4:
@@ -93,13 +94,19 @@ def half_level(df: pd.DataFrame, i0: int, i1: int, label: str) -> Level | None:
     seg_hi, seg_lo = hi[i0:i1 + 1], lo[i0:i1 + 1]
     jh, jl = i0 + int(np.argmax(seg_hi)), i0 + int(np.argmin(seg_lo))
     mid = (hi[jh] + lo[jl]) / 2
-    touch = np.where((seg_lo <= mid) & (seg_hi >= mid))[0]
-    if not len(touch):
-        return None
-    o = i0 + int(touch[0])
+    o, how = None, "さかのぼって最初に到達"
+    for k in range(i0, -1, -1):
+        if lo[k] <= mid <= hi[k]:
+            o = k
+            break
+    if o is None:
+        touch = np.where((seg_lo <= mid) & (seg_hi >= mid))[0]
+        if not len(touch):
+            return None
+        o, how = i0 + int(touch[0]), "期間内で最初に到達"
     d = lambda k: df.index[k].strftime("%Y-%m-%d" if df.index[k].hour == 0 else "%m-%d %H:%M")
     lv = Level(float(mid), o, df.index[o],
-               f"半値水準（{label}の高値 {hi[jh]:,.1f}［{d(jh)}］と安値 {lo[jl]:,.1f}［{d(jl)}］の半値、初到達 {d(o)}）")
+               f"半値水準（{label}の高値 {hi[jh]:,.1f}［{d(jh)}］と安値 {lo[jl]:,.1f}［{d(jl)}］の半値、{how} {d(o)}）")
     lv.kind = "half"
     lv.range = (int(i0), int(i1), int(jh), int(jl))
     return lv
@@ -183,6 +190,6 @@ def level_change_dates(levels: list[Level], index_ext: pd.DatetimeIndex, n_bars:
             j = lv.origin_i + b - 1
             if n_bars - 3 <= j < n_bars + horizon:
                 out.append(ChangeDate(j, index_ext[j], "level", b, lv.origin, "level",
-                                      f"{'半値水準' if lv.kind == 'half' else '相場水準'} {lv.price:,.1f}（{lv.source.split(' / ')[0] if lv.kind != 'half' else '初到達'}）起点 {lv.origin.date()} から {b}{unit}目",
+                                      f"{'半値水準' if lv.kind == 'half' else '相場水準'} {lv.price:,.1f}（{lv.source.split(' / ')[0] if lv.kind != 'half' else '起点'}）起点 {lv.origin.date()} から {b}{unit}目",
                                       (0.5 + min(lv.score, 10) / 10) * (1.5 if lv.kind == "half" else 1.0)))
     return out

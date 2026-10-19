@@ -283,7 +283,7 @@ def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: st
     for c in waves.wave_change_dates([w], index_ext, n, horizon, unit=unit):
         c.detail = c.detail.replace("【定型】", "【手動】")
         cands.append(c)
-    # 手動 A 以降の高値・安値の半値水準（初到達日を起点）
+    # 手動 A 以降の高値・安値の半値水準（A から過去へさかのぼって最初に半値を付けた日を起点）
     half = lv.half_level(df, A.i, n - 1, f"手動 A {A.date.date()} 以降")
     if half is not None:
         lv._evaluate(half, df, res.pivots)
