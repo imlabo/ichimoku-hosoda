@@ -31,6 +31,7 @@ class Wave3:
     achieved: dict = field(default_factory=dict)     # 計算値ごとの達成有無
     extreme_since_c: float = float("nan")
     note: str = ""
+    tag: str = ""          # 定型（期間の最高値・最安値から機械的に決めた三波動）なら説明文
 
     def ad_basic(self, i_d: int):
         return nearest_basic(bars_between(self.A.i, i_d))
@@ -49,6 +50,107 @@ def _origin_candidates(pivs: list[Pivot], ci: int, max_back: int, start: int, ma
     if e is not None and e < ci:
         cand.add(e)
     return sorted(cand, reverse=True)
+
+
+def _mk_wave(A: Pivot, B: Pivot, C: Pivot, direction: str, df: pd.DataFrame) -> Wave3:
+    hi, lo = df["High"].values, df["Low"].values
+    ab, bc, ac = bars_between(A.i, B.i), bars_between(B.i, C.i), bars_between(A.i, C.i)
+    w = Wave3(A, B, C, direction, ab, bc, ac)
+    w.d_dates = {"AB=BD": B.i + ab - 1, "AB=CD": C.i + ab - 1, "AC=CD": C.i + ac - 1}
+    a, b, c = A.price, B.price, C.price
+    if direction == "up":
+        w.calc = {"E": b + (b - a), "N": c + (b - a), "V": b + (b - c), "NT": c + (c - a)}
+        w.extreme_since_c = float(hi[C.i:].max())
+        w.achieved = {k: w.extreme_since_c >= v for k, v in w.calc.items()}
+        w.note = "N候補（押し目が起点より上）"
+    else:
+        w.calc = {"E": b - (a - b), "N": c - (a - b), "V": b - (c - b), "NT": c - (a - c)}
+        w.extreme_since_c = float(lo[C.i:].min())
+        w.achieved = {k: w.extreme_since_c <= v for k, v in w.calc.items()}
+        w.note = "N候補（戻りが起点より下）"
+    return w
+
+
+def rule_waves(df: pd.DataFrame, pivs: list[Pivot], windows: tuple[int | None, ...] = (None, 250, 120)) -> list[Wave3]:
+    """定型の三波動（ユーザー定義のシンプルな決め方）。
+    下げ: A = 期間の最高値、B = A 以降の最安値、C = B 以降の最高値
+    上げ: A = 期間の最安値、B = A 以降の最高値、C = B 以降の最安値
+    B が直近（C の余地がない＝第一波動が進行中）のときは、A 以降で確定した最大の山（谷）を B とし、
+    その後の最安値（最高値）を C とする内側の三波動も出す。"""
+    hi, lo = df["High"].values, df["Low"].values
+    n = len(df)
+    rank_at = {p.i: p.rank for p in pivs}
+    confirmed = {p.i for p in pivs[:-1]}            # 最後の極は進行中
+    out: list[Wave3] = []
+
+    def piv(i: int, kind: str) -> Pivot:
+        return Pivot(i, df.index[i], float(hi[i] if kind == "H" else lo[i]), kind, max(rank_at.get(i, 0), 3))
+
+    for win in windows:
+        if win is not None and win >= n:
+            continue
+        s0 = 0 if win is None else n - win
+        label = "表示期間全体" if win is None else f"直近{win}本"
+        for direction in ("down", "up"):
+            if direction == "down":
+                ai = s0 + int(np.argmax(hi[s0:]))
+                if ai >= n - 3:
+                    continue
+                bi = ai + int(np.argmin(lo[ai:]))
+                kA, kB = "H", "L"
+            else:
+                ai = s0 + int(np.argmin(lo[s0:]))
+                if ai >= n - 3:
+                    continue
+                bi = ai + int(np.argmax(hi[ai:]))
+                kA, kB = "L", "H"
+            tag = f"定型（{label}）"
+            ci_forced = None
+            if bi >= n - 2:
+                # B が直近で更新中（＝第三波動が進行中）→ A 以降の山（谷）のうち、
+                # その後の押し（戻り）が最も深かったものを B、その押しの底（戻りの天井）を C とする
+                best = None
+                for p in pivs:
+                    if p.kind != kB or not (ai < p.i < n - 2) or p.i not in confirmed:
+                        continue
+                    if kB == "H":
+                        brk = next((k for k in range(p.i + 1, n) if hi[k] > p.price), n)
+                        seg_lo = p.i + 1 + int(np.argmin(lo[p.i + 1:brk])) if brk > p.i + 1 else None
+                        if seg_lo is None:
+                            continue
+                        depth = (p.price - lo[seg_lo]) / max(p.price - lo[ai], 1e-9)
+                    else:
+                        brk = next((k for k in range(p.i + 1, n) if lo[k] < p.price), n)
+                        seg_lo = p.i + 1 + int(np.argmax(hi[p.i + 1:brk])) if brk > p.i + 1 else None
+                        if seg_lo is None:
+                            continue
+                        depth = (hi[seg_lo] - p.price) / max(hi[ai] - p.price, 1e-9)
+                    if depth >= 0.2 and (best is None or depth > best[0] + 1e-9):
+                        best = (depth, p.i, seg_lo)
+                if best is None:
+                    continue
+                _, bi, ci_forced = best
+                tag = f"定型（{label}・B は最も深い押し{'' if kB == 'H' else '（戻り）'}の前の{'山' if kB == 'H' else '谷'}／現在は第三波動進行中）"
+            if bi - ai < 2 or bi >= n - 1:
+                continue
+            ci = ci_forced if ci_forced is not None else \
+                bi + 1 + (int(np.argmax(hi[bi + 1:])) if direction == "down" else int(np.argmin(lo[bi + 1:])))
+            A, B, C = piv(ai, kA), piv(bi, kB), piv(ci, kA)
+            if (direction == "down" and C.price >= A.price) or (direction == "up" and C.price <= A.price):
+                continue
+            w = _mk_wave(A, B, C, direction, df)
+            w.tag = tag + ("（C は形成中）" if ci >= n - 2 else "")
+            out.append(w)
+    # 重複除去（同じ A・B・C）
+    uniq, seen = [], set()
+    # 表示期間全体 → 直近250本 → 直近120本 の順、同じ期間内では起点 A が新しい順
+    order = lambda w: (0 if "表示期間全体" in w.tag else 1 if "250" in w.tag else 2, -w.A.i)
+    for w in sorted(out, key=order):
+        k = (w.A.i, w.B.i, w.C.i)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(w)
+    return uniq
 
 
 def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 20, max_back: int = 4,
@@ -180,9 +282,9 @@ def wave_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bars: i
                 extra = f"、A〜D {bars_between(w.A.i, j)}{unit}≒基本数値{nb[0]}" if nb else ""
                 out.append(ChangeDate(j, index_ext[j], "wave", j - (w.B.i if rel == "AB=BD" else w.C.i) + 1,
                                       w.C.date, w.C.kind,
-                                      f"{'上げ' if w.direction=='up' else '下げ'}三波動 A{w.A.date.date()} B{w.B.date.date()} "
+                                      f"{'【定型】' if w.tag else ''}{'上げ' if w.direction=='up' else '下げ'}三波動 A{w.A.date.date()} B{w.B.date.date()} "
                                       f"C{w.C.date.date()} の {rel}（{w.ab if rel!='AC=CD' else w.ac}{unit}）{extra}",
-                                      1.2 + 0.15 * (w.A.rank + w.C.rank) + (0.5 if nb else 0)))
+                                      (1.2 + 0.15 * (w.A.rank + w.C.rank) + (0.5 if nb else 0)) * (2.0 if w.tag else 1.0)))
     return out
 
 

@@ -49,13 +49,13 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "change_dates": [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
                           "n": c["n_sources"], "kinds": c["kinds"], "details": [i.detail for i in c["items"][:6]]}
                          for c in res.change_clusters[:15]],
-        "waves": [{"dir": w.direction, "A": [_d(w.A.date), _f(w.A.price)], "A_rank": w.A.rank, "A_i": w.A.i, "C_i": w.C.i,
+        "waves": [{"dir": w.direction, "tag": w.tag, "A": [_d(w.A.date), _f(w.A.price)], "A_rank": w.A.rank, "A_i": w.A.i, "C_i": w.C.i,
                    "B": [_d(w.B.date), _f(w.B.price)],
                    "C": [_d(w.C.date), _f(w.C.price)], "ab": w.ab, "bc": w.bc, "ac": w.ac,
                    "calc": {k: _f(v) for k, v in w.calc.items()}, "achieved": w.achieved,
                    "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()},
                    "d_info": [_dinfo(w, k, i, n, res) for k, i in w.d_dates.items()]}
-                  for w in res.waves if "不成立" not in w.note][:12],
+                  for w in res.waves if "不成立" not in w.note][:16],
         "waveform": res.waveform["form"] if res.waveform else None,
         "p_value": ({"A": [_d(res.p_value["A"].date), _f(res.p_value["A"].price)],
                      "B": [_d(res.p_value["B"].date), _f(res.p_value["B"].price)],

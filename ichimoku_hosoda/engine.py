@@ -209,12 +209,32 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     index_ext = numbers.future_dates(df.index, max(horizon + 5, 320))  # D 予測日が遠い大きな三波動にも日付を付ける
     pos = lines.position(df, L)
     events = lines.support_resistance_events(df, L)
-    ws = waves.build_waves(pivs, df)
+    rw = waves.rule_waves(df, pivs)
+    seen_ac = {(w.A.i, w.C.i) for w in rw}
+    ws = rw + [w for w in waves.build_waves(pivs, df) if (w.A.i, w.C.i) not in seen_ac]
     wf = waves.classify_last_waveform(pivs)
     pv = waves.p_value(pivs)
     calc = waves.calc_levels(ws, float(df["Close"].iloc[-1]))
     lvs = lv.find_levels(df, L, pivs)
-    cands = (numbers.basic_change_dates(pivs[-10:], index_ext, n, horizon, unit=unit)
+    # 定型三波動の A・B・C からの基本数値／対等数値（細田：重要な高値・安値からの基本数値・対等数値で変化日を定める）
+    rule_pts, seen_pt = [], set()
+    for w in rw:
+        for p in (w.A, w.B, w.C):
+            if p.i not in seen_pt:
+                seen_pt.add(p.i)
+                rule_pts.append(p)
+    rule_cands = []
+    for c in numbers.basic_change_dates(rule_pts, index_ext, n, horizon, unit=unit):
+        c.weight *= 1.8
+        c.detail = "【定型】" + c.detail
+        rule_cands.append(c)
+    for w in rw:   # 対等数値: B から AB、C から BC（もみ合い時間）、C から AB
+        for base, length, lab in ((w.B, w.ab, "AB"), (w.C, w.bc, "BC"), (w.C, w.ab, "AB")):
+            j = base.i + length - 1
+            if n - 3 <= j < n + horizon:
+                rule_cands.append(numbers.ChangeDate(j, index_ext[j], "equal", length, base.date, base.kind,
+                    f"【定型】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{base.date.date()} から", 2.0))
+    cands = (rule_cands + numbers.basic_change_dates(pivs[-10:], index_ext, n, horizon, unit=unit)
              + numbers.equal_change_dates(pivs, index_ext, n, horizon, unit=unit)
              + waves.wave_change_dates(ws, index_ext, n, horizon, unit=unit)
              + lv.level_change_dates(lvs, index_ext, n, horizon, unit=unit))
