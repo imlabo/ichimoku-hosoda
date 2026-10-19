@@ -215,7 +215,8 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     wf = waves.classify_last_waveform(pivs)
     pv = waves.p_value(pivs)
     calc = waves.calc_levels(ws, float(df["Close"].iloc[-1]))
-    lvs = lv.find_levels(df, L, pivs)
+    # 半値水準の期間には定型三波動の A〜現在も加える
+    lvs = lv.find_levels(df, L, pivs, ranges=[(w.A.i, n - 1, f"定型三波動 A {w.A.date.date()} 以降") for w in rw])
     # 定型三波動の A・B・C からの基本数値／対等数値（細田：重要な高値・安値からの基本数値・対等数値で変化日を定める）
     rule_pts, seen_pt = [], set()
     for w in rw:
@@ -282,4 +283,13 @@ def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: st
     for c in waves.wave_change_dates([w], index_ext, n, horizon, unit=unit):
         c.detail = c.detail.replace("【定型】", "【手動】")
         cands.append(c)
+    # 手動 A 以降の高値・安値の半値水準（初到達日を起点）
+    half = lv.half_level(df, A.i, n - 1, f"手動 A {A.date.date()} 以降")
+    if half is not None:
+        lv._evaluate(half, df, res.pivots)
+        for c in lv.level_change_dates([half], index_ext, n, horizon, unit=unit):
+            c.detail = "【手動】" + c.detail
+            c.weight *= 1.5
+            cands.append(c)
+    w.half = half
     return w, numbers.cluster_dates(cands)

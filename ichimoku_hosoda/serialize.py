@@ -118,7 +118,10 @@ def _level(l, res, n):
     # 直近 26 本で水準を跨いだ回数（押し戻りとして機能せず水準化しているか）
     seg = df.iloc[-26:]
     cross = int(((seg["Low"] <= l.price) & (seg["High"] >= l.price)).sum())
-    return {"price": _f(l.price), "source": l.source.split(" / ")[0], "sources": l.source.split(" / "),
+    return {"price": _f(l.price), "source": l.source.split(" / ")[0], "sources": l.source.split(" / "), "kind": l.kind,
+            "range": ({"from": _d(df.index[l.range[0]]), "to": _d(df.index[l.range[1]]),
+                       "hi": _f(df["High"].iloc[l.range[2]]), "hi_date": _d(df.index[l.range[2]]),
+                       "lo": _f(df["Low"].iloc[l.range[3]]), "lo_date": _d(df.index[l.range[3]])} if l.range else None),
             "origin": _d(l.origin), "elapsed": int(elapsed), "score": round(l.score, 2),
             "upper": _f(l.upper_limit), "lower": _f(l.lower_limit),
             "hi_since": hi_since, "lo_since": lo_since,

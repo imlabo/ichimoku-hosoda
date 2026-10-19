@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from . import data, margin, names
 from .engine import analyze
-from .serialize import clusters_to_json, result_to_json, waves_to_json
+from .serialize import _level, clusters_to_json, result_to_json, waves_to_json
 from .engine import manual_wave
 from . import waves as wavemod
 
@@ -165,9 +165,21 @@ def _get_result(code: str, frame: str, period: str):
 
 
 @app.get("/api/wave_custom")
-def api_wave_custom(code: str, frame: str, a: int, b: int, c: int, dir: str = "", kinds: str = "", period: str = "6y"):
+def api_wave_custom(code: str, frame: str, a: int = -1, b: int = -1, c: int = -1, dir: str = "", kinds: str = "",
+                    dates: str = "", period: str = "6y"):
     """チャート上で A・B・C をドラッグして指定した三波動（a/b/c は足の位置）。計算値・D・変化日を返す。"""
     r = _get_result(code, frame, period)
+    if dates:   # 保存した日付から足の位置を引く（期間を変えても同じ点を指せるように）
+        from .serialize import _d, _FMT
+        _FMT["fmt"] = "%m-%d %H:%M" if r.unit == "本" else "%Y-%m-%d"
+        idx = [_d(t) for t in r.df.index]
+        pos = []
+        for ds in dates.split(","):
+            hit = [k for k, v in enumerate(idx) if v == ds]
+            if not hit:
+                raise HTTPException(404, f"{ds} の足がこの期間にありません")
+            pos.append(hit[-1])
+        a, b, c = pos
     try:
         w, cl = manual_wave(r, a, b, c, dir or None, kinds or None)
     except ValueError as e:
@@ -176,6 +188,8 @@ def api_wave_custom(code: str, frame: str, a: int, b: int, c: int, dir: str = ""
     wj["manual"] = True
     wj["note"] = w.note
     wj["cd"] = clusters_to_json(cl[:12], len(r.df))
+    wj["kinds"] = "".join(p.kind for p in (w.A, w.B, w.C))
+    wj["half"] = _level(w.half, r, len(r.df)) if w.half is not None else None
     return JSONResponse({"wave": wj})
 
 

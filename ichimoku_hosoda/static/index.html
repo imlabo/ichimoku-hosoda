@@ -81,6 +81,7 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
   <label><input type="checkbox" id="ly_piv" checked> 高値安値ラベル</label>
   　本数: <select id="bars"><option value="120">120</option><option value="200" selected>200</option><option value="320">320</option></select>
   <button id="recalc" disabled style="margin-left:14px;padding:4px 12px;font-size:12px;border-color:#b03a2e;color:#b03a2e;cursor:pointer">A・B・C で再計算</button>
+  <button id="clearabc" style="display:none;padding:4px 10px;font-size:12px;cursor:pointer">手動の A・B・C を解除</button>
   <span id="recalcnote" class="muted"></span>
 </div>
 <main>
@@ -136,6 +137,7 @@ function render(){
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{FRAME=b.dataset.k+(INV&&DATA.frames[b.dataset.k+'_inv']?'_inv':'');SEL_WAVE=0;render()});
   $('#invtoggle').onchange=e=>{INV=e.target.checked; FRAME=base+(INV&&DATA.frames[base+'_inv']?'_inv':''); SEL_WAVE=0; render()};
   const F=DATA.frames[FRAME]||DATA.frames[base]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
+  ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
 let SEL_LEVEL=null;
 ['ly_level','ly_calc','ly_cd','ly_d','ly_piv','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
@@ -179,13 +181,20 @@ function drawChart(F){
     const lv=F.levels.filter(l=>l.price>ymin-span*.05&&l.price<ymax+span*.05).slice(0,6);
     lv.forEach((l,i)=>{const sel=SEL_LEVEL===l.price, col=sel?'#5b1a86':'#7d3c98', x0=inWin(l.origin)?l.origin:o.date[0];
       shapes.push({type:'line',x0,x1:lastX,y0:l.price,y1:l.price,line:{color:col,width:sel?2:1,dash:'dot'}});
-      ann.push({x:x0,y:l.price,text:`水準${i+1} ${fmt(rp(l.price))}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col},bgcolor:'rgba(255,255,255,.75)'});
+      ann.push({x:x0,y:l.price,text:`${l.kind==='half'?'半値':'水準'}${i+1} ${fmt(rp(l.price))}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:col},bgcolor:'rgba(255,255,255,.75)'});
       traces.push({x:[inWin(l.origin)?l.origin:null].filter(Boolean),y:[l.price],mode:'markers',type:'scatter',showlegend:false,marker:{symbol:'diamond',size:9,color:col},hovertemplate:`水準${i+1} 起点 ${l.origin}<br>${l.source}<extra></extra>`});
       const hs=l.hits.filter(h=>inWin(h.date));
       if(hs.length) traces.push({x:hs.map(h=>h.date),y:hs.map(()=>l.price),mode:'markers',type:'scatter',showlegend:false,marker:{size:6,color:col,symbol:hs.map(h=>h.what==='高値'?'triangle-down':h.what==='安値'?'triangle-up':'circle')},
         hovertemplate:hs.map(h=>`水準${i+1} 起点から ${h.n}${u}目: ${h.what}`).map(t=>t+'<extra></extra>')});
       l.next_basic.slice(0,1).forEach(nb2=>{ if(nb2.date&&allDates.includes(nb2.date)) traces.push({x:[nb2.date],y:[l.price],mode:'markers',type:'scatter',showlegend:false,marker:{size:7,color:col,symbol:'circle-open'},hovertemplate:`水準${i+1} 次の基本数値 ${nb2.n}${u}目<extra></extra>`})});
     });
+  }
+  // ---- 手動三波動の半値水準（A 以降の高値・安値の半値、◆＝初到達日）
+  if(selW&&selW.manual&&selW.half){const hl=selW.half, x0=inWin(hl.origin)?hl.origin:o.date[0];
+    shapes.push({type:'line',x0,x1:lastX,y0:hl.price,y1:hl.price,line:{color:'#b03a2e',width:1.6,dash:'dot'}});
+    ann.push({x:x0,y:hl.price,text:`手動A以降の半値 ${fmt(rp(hl.price))}`,showarrow:false,xanchor:'left',yanchor:'top',font:{size:10,color:'#b03a2e'},bgcolor:'rgba(255,255,255,.8)'});
+    if(inWin(hl.origin)) traces.push({x:[hl.origin],y:[hl.price],mode:'markers',type:'scatter',showlegend:false,marker:{symbol:'diamond',size:11,color:'#b03a2e'},hovertemplate:`半値に初到達 ${hl.origin}（起点）<extra></extra>`});
+    hl.next_basic.forEach(nb2=>{ if(nb2.date&&allDates.includes(nb2.date)) traces.push({x:[nb2.date],y:[hl.price],mode:'markers',type:'scatter',showlegend:false,marker:{size:8,color:'#b03a2e',symbol:'circle-open'},hovertemplate:`半値水準の起点から ${nb2.n}${u}目<extra></extra>`})});
   }
   // ---- 計算値
   if(LY('ly_calc')){
@@ -292,12 +301,35 @@ async function recalc(){
   $('#recalc').disabled=true; st('指定した A・B・C で計算値・D・変化日を計算中…');
   try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&kinds=${kinds}`);
     const j=await r.json(); if(!r.ok) throw new Error(j.detail);
-    PEND=null; F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); SEL_WAVE=0; drawChart(F); drawSide(F);
+    PEND=null; F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); saveManual(FRAME,j.wave); $('#clearabc').style.display='inline-block'; SEL_WAVE=0; drawChart(F); drawSide(F);
     const warn=j.wave.note&&j.wave.note.includes('注意');
     st(`再計算しました（${j.wave.dir==='up'?'上げ':'下げ'}三波動）：A ${j.wave.A[0]} ${fmt(ABC.rp(j.wave.A[1]))} → B ${j.wave.B[0]} ${fmt(ABC.rp(j.wave.B[1]))} → C ${j.wave.C[0]} ${fmt(ABC.rp(j.wave.C[1]))}${warn?'　'+j.wave.note.split('注意: ')[1]:''}`, warn)
   }catch(err){st(err.message,true); updRecalc()}
 }
 $('#recalc').onclick=recalc;
+
+// ---- 手動の A・B・C を銘柄・足種ごとに保存（このブラウザ内）。上下反転チャートにも同じ点を引き継ぐ
+const swapK=k=>k.split('').map(x=>x==='H'?'L':'H').join('');
+const abcStore=()=>{try{return JSON.parse(localStorage.getItem('abc:'+DATA.name)||'{}')}catch(e){return {}}};
+const abcSave=o=>{try{localStorage.setItem('abc:'+DATA.name,JSON.stringify(o))}catch(e){}};
+function saveManual(fk,w){const base=fk.replace(/_inv$/,''), o=abcStore();
+  o[base]={dates:[w.A[0],w.B[0],w.C[0]], kinds:fk.endsWith('_inv')?swapK(w.kinds):w.kinds}; abcSave(o);
+  const F=DATA.frames[fk]; if(F) F._msig=JSON.stringify(o[base]);
+  const other=DATA.frames[fk.endsWith('_inv')?base:base+'_inv']; if(other){other.waves=other.waves.filter(x=>!x.manual); other._msig=null}}
+async function ensureManual(fk){
+  const F=DATA.frames[fk]; if(!F) return; const base=fk.replace(/_inv$/,''), sv=abcStore()[base];
+  $('#clearabc').style.display=sv?'inline-block':'none';
+  if(!sv){return} const sig=JSON.stringify(sv); if(F._msig===sig) return; F._msig=sig;
+  const kinds=fk.endsWith('_inv')?swapK(sv.kinds):sv.kinds;
+  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim()||DATA.input||DATA.name)}&frame=${fk}&period=${$('#period').value}&dates=${encodeURIComponent(sv.dates.join(','))}&kinds=${kinds}`);
+    const j=await r.json(); if(!r.ok) throw new Error(j.detail);
+    F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual));
+    if(FRAME===fk||(!DATA.frames[FRAME]&&base===fk)){SEL_WAVE=0; PEND=null; drawChart(F); drawSide(F)}
+    st(`保存してある手動の A・B・C（${sv.dates.join(' → ')}）を表示しています`)
+  }catch(e){st('保存した A・B・C を再現できませんでした: '+e.message,true)}}
+$('#clearabc').onclick=()=>{const base=FRAME.replace(/_inv$/,''), o=abcStore(); delete o[base]; abcSave(o);
+  [base,base+'_inv'].forEach(k=>{const F=DATA.frames[k]; if(F){F.waves=F.waves.filter(w=>!w.manual); F._msig=null}});
+  SEL_WAVE=0; PEND=null; render(); st('手動の A・B・C を解除しました（定型の三波動に戻しました）')};
 
 function drawSide(F){
   const u=F.unit, c=F.close, u_=u;
@@ -310,14 +342,15 @@ function drawSide(F){
   h+=`<h2>三波動の終了予測日（D）</h2><div class="muted" style="margin-bottom:6px">第一波動 AB・第二波動 BC が決まれば、三波動目の時間は AB=BD／AB=CD／AC=CD で先に見積もれる。A〜D が基本数値になる日は特に重要。その日に高値（安値）となるか、反応なく続伸（延長）かを確認する。</div><table><tr><th>波動</th><th>A → B → C</th><th>関係</th><th>予測日 D</th><th class="num">あと</th><th class="num">A〜D</th></tr>`+
     [F.waves[SEL_WAVE]].concat(F.waves.filter((_,i)=>i!==SEL_WAVE)).filter(Boolean).slice(0,5).map((w,wi)=>w.d_info.map((d,di)=>`<tr${d.offset<0?' style="color:#999"':''}>${di===0?`<td rowspan="3"><b>D${wi+1}</b><br><span class="muted">${w.dir==='up'?'上げ':'下げ'}</span></td><td rowspan="3" class="muted">${w.A[0]} ${fmt(w.A[1])}<br>${w.B[0]} ${fmt(w.B[1])}<br>${w.C[0]} ${fmt(w.C[1])}<br>AB ${w.ab}・BC ${w.bc}・AC ${w.ac}${u}</td>`:''}<td>${d.rel}<br><span class="muted">${d.days}${u}</span></td><td class="num"><b>${d.date||'-'}</b></td><td class="num">${d.offset<0?`${-d.offset}${u}前（経過）`:d.offset===0?'本日':`+${d.offset}${u}`}</td><td class="num">${d.ad}${u}${d.ad_basic?`<br><span class="ok">≒基本数値 ${d.ad_basic}</span>`:''}</td></tr>`).join('')).join('')+'</table>';
   const sw=F.waves[SEL_WAVE];
-  if(sw&&sw.manual&&sw.cd) h+=`<h2>手動の三波動から見た変化日</h2><div class="muted" style="margin-bottom:6px">ドラッグで決めた A ${sw.A[0]} ${fmt(sw.A[1])} → B ${sw.B[0]} ${fmt(sw.B[1])} → C ${sw.C[0]} ${fmt(sw.C[1])} からの基本数値・対等数値（B から AB、C から BC・AB・AC）と D 予測日。チャートの橙線もこの表に切り替わっています（他の候補行を選ぶと元に戻る）。</div><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>根拠</th></tr>`+
+  if(sw&&sw.manual&&sw.cd) h+=`<h2>手動の三波動から見た変化日</h2><div class="muted" style="margin-bottom:6px">ドラッグで決めた A ${sw.A[0]} ${fmt(sw.A[1])} → B ${sw.B[0]} ${fmt(sw.B[1])} → C ${sw.C[0]} ${fmt(sw.C[1])} からの基本数値・対等数値（B から AB、C から BC・AB・AC）と D 予測日。チャートの橙線もこの表に切り替わっています（他の候補行を選ぶと元に戻る）。</div>`+
+    (sw.half?`<div class="verdict" style="background:#fbeeee;border-left-color:#b03a2e;margin-bottom:6px"><b>手動 A 以降の半値水準 ${fmt(sw.half.price)}</b>：高値 ${fmt(sw.half.range.hi)}（${sw.half.range.hi_date}）と安値 ${fmt(sw.half.range.lo)}（${sw.half.range.lo_date}）の半値。<b>初到達 ${sw.half.origin}</b> を起点に、${sw.half.next_basic.map(x=>`${x.n}${u}目 ${x.date||'-'}`).join('、')}。これまでの基本数値日: ${sw.half.hits.map(h=>`${h.n}${u}目 ${h.what}`).join('、')||'—'}</div>`:'')+`<table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>根拠</th></tr>`+
     sw.cd.filter(x=>x.offset>=0).slice(0,8).map(cd=>`<tr class="cd"><td class="num"><b>${cd.date}</b></td><td class="num">+${cd.offset}</td><td class="num">${cd.score}</td><td>${cd.details.slice(0,3).map(d=>'・'+d).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>時間の節目 ― 変化日候補（基本数値・対等数値・三波動・相場水準の重なり）</h2><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>主な根拠</th></tr>`+
     F.change_dates.slice(0,10).map(cd=>`<tr class="cd"><td class="num"><b>${cd.date}</b></td><td class="num">${cd.offset>0?'+':''}${cd.offset}</td><td class="num">${cd.score}</td><td>${cd.details.slice(0,3).map(d=>'・'+d).join('<br>')}${cd.n>3?`<br><span class="muted">…他 ${cd.n-3} 件</span>`:''}</td></tr>`).join('')+'</table>';
   const up=F.calc.filter(x=>x.price>c).slice(0,6).reverse(), dn=F.calc.filter(x=>x.price<=c).slice(-6).reverse();
   h+=`<h2>価格の節目 ― 計算値の集中</h2><table><tr><th class="num">値段</th><th class="num">現値比</th><th>種別</th><th>達成</th></tr>`+
     up.concat(dn).map(x=>`<tr><td class="num"><b>${fmt(x.price)}</b></td><td class="num">${x.pct>0?'+':''}${x.pct}%</td><td>${x.kinds.split('/').map(k=>`<span class="tag ${k}">${k}</span>`).join('')}×${x.n}</td><td>${x.achieved?'<span class="ok">達成済</span>':'未達'}</td></tr>`).join('')+'</table>';
-  h+=`<h2>相場水準 ― どこにあるか・どう機能してきたか</h2><div class="muted" style="margin-bottom:6px">細田：もみ合いは「ある価格を相場水準に同程度の高値・安値を作る変動」。水準を初めて付けた起点からの基本数値日に、高値・安値・同水準が現れやすく、放れはこの水準から出発しやすい。水準×2−反対側の極値 ＝ もみ合いの限界。行をクリックするとチャートで強調。</div>`+
+  h+=`<h2>相場水準 ― どこにあるか・どう機能してきたか</h2><div class="muted" style="margin-bottom:6px">細田：もみ合いは「ある価格を相場水準に同程度の高値・安値を作る変動」。水準を初めて付けた起点からの基本数値日に、高値・安値・同水準が現れやすく、放れはこの水準から出発しやすい。水準×2−反対側の極値 ＝ もみ合いの限界。<br><b>半値水準</b>：ある期間の高値と安値の半値を出し、その期間で初めてその値段に到達した日（図の A）を起点に基本数値を数える。起点からの基本数値日は ①高値 ③安値 ②水準そのもの にとどまりやすい。期間は直近 26・52・76・129・172・257 本と定型三波動の A 以降。行をクリックするとチャートで強調。</div>`+
     (()=>{const lv=F.levels.slice(0,6); if(!lv.length) return ''; const near=[...lv].sort((a,b)=>Math.abs(a.pct)-Math.abs(b.pct))[0], act=lv.filter(l=>l.touch26>=6);
       const up=lv.filter(l=>l.price>F.close).sort((a,b)=>a.price-b.price)[0], dn=lv.filter(l=>l.price<F.close).sort((a,b)=>b.price-a.price)[0];
       return `<div class="verdict" style="background:#f6f0fa;border-left-color:#7d3c98"><b>現在地:</b> 現値 ${fmt(F.close)}。最も近い水準は <b>${fmt(near.price)}</b>（${near.pct>0?'+':''}${near.pct}%、${near.source}）。`+
@@ -327,8 +360,8 @@ function drawSide(F){
       const func=l.touch26>=6?`直近26${u}で${l.touch26}回またいでいる → 押し戻りとしてではなく<b>相場水準として機能中</b>`:l.touch26>0?`直近26${u}で${l.touch26}回接触`:`直近26${u}は接触なし（離れている）`;
       const hits=l.hits.map(h=>`<span class="tag">${h.n}${u}目 ${h.what}</span>`).join(' ')||'<span class="muted">—</span>';
       const nxt=l.next_basic.map(x=>`${x.n}${u}目 ${x.date||'-'}（+${x.ahead}${u}）`).join('、');
-      return `<table class="lvt" style="margin-bottom:10px"><tr class="lv${SEL_LEVEL===l.price?' sel':''}" data-p="${l.price}"><td style="width:28%"><div style="font-size:16px"><b>水準${i+1}　${fmt(l.price)}</b></div><div class="muted">${rel}</div><div class="muted">スコア ${l.score}</div></td>
-        <td><div><b>根拠:</b> ${l.sources.join(' ／ ')}</div><div><b>起点:</b> ${l.origin}（${l.elapsed}${u}経過）</div><div><b>基本数値日の現れ方:</b> ${hits}</div><div><b>次の基本数値日:</b> ${nxt||'—'}</div>
+      return `<table class="lvt" style="margin-bottom:10px"><tr class="lv${SEL_LEVEL===l.price?' sel':''}" data-p="${l.price}"><td style="width:28%"><div style="font-size:16px"><b>${l.kind==='half'?'半値':'水準'}${i+1}　${fmt(l.price)}</b></div>${l.kind==='half'?'<span class="tag" style="background:#7d3c98;color:#fff">期間の半値</span>':''}<div class="muted">${rel}</div><div class="muted">スコア ${l.score}</div></td>
+        <td><div><b>根拠:</b> ${l.sources.join(' ／ ')}</div><div><b>起点:</b> ${l.origin}（${l.elapsed}${u}経過）${l.kind==='half'?`＝ ${l.range.from}〜${l.range.to} の高値 ${fmt(l.range.hi)}・安値 ${fmt(l.range.lo)} の半値に<b>初めて到達した日</b>（資料の図の A）`:''}</div><div><b>基本数値日の現れ方:</b> ${hits}</div><div><b>次の基本数値日:</b> ${nxt||'—'}</div>
         <div><b>もみ合い限界:</b> 上 ${fmt(l.upper)}（= ${fmt(l.price)}×2 − 安値 ${fmt(l.lo_since)}） ／ 下 ${fmt(l.lower)}（= ${fmt(l.price)}×2 − 高値 ${fmt(l.hi_since)}）</div><div class="muted">${func}</div></td></tr></table>`}).join('');
   h+=`<h2>計算値（三波動ごと・式つき）</h2><div class="muted" style="margin-bottom:6px">細田：E 達成＝上げ（下げ）の勢い優勢で方向持続しやすい／N・V 達成止まり＝BC の半値・B を中心とするもみ合いの範疇で警戒／NT＝限界。計算値は達成するか未確定、変化日は必ず来る。</div>`+
     [F.waves[SEL_WAVE]].concat(F.waves.filter((_,i)=>i!==SEL_WAVE)).filter(Boolean).slice(0,4).map(w=>{const [a,b,c]=[w.A[1],w.B[1],w.C[1]], u=w.dir==='up', sg=u?'+':'−', ab=Math.abs(b-a), bc=Math.abs(c-b), ac=Math.abs(c-a);

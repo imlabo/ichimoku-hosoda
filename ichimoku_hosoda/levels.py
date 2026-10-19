@@ -6,6 +6,8 @@
   ③ 転換線と基準線の交点、2本の先行スパンの交点
   ④ 重要な変化日に高値・安値となった足
   ⑤ 変化日・計算値で反応がなかった位置（本実装では三波動の計算値未達で経過した C を候補に）
+  ⑥ 半値水準（まとめ資料 III-1）：ある期間の高値と安値の半値を出し、その期間内で初めてその値段に
+     到達した日（図の A）を起点とする。起点からの基本数値日は 高値・安値・水準そのものに止まりやすい
 評価：水準を付けた起点からの基本数値日に、同水準・高値・安値が出ているか。
 限界値：水準×2 − 反対側の極値。
 """
@@ -31,9 +33,12 @@ class Level:
     score: float = 0.0
     upper_limit: float = float("nan")
     lower_limit: float = float("nan")
+    kind: str = ""          # "half" = 期間の高安の半値水準
+    range: tuple = ()       # (i0, i1, 高値の足, 安値の足)
 
 
-def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: int = 400) -> list[Level]:
+def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: int = 400,
+                ranges: list[tuple[int, int, str]] | None = None) -> list[Level]:
     n = len(df)
     start = max(0, n - lookback)
     sub_idx = df.index[start:]
@@ -70,9 +75,51 @@ def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: 
                                 f"重要{'高値' if p.kind=='H' else '安値'}日の足の半値"))
 
     levels = _merge(levels)
-    for lv in levels:
+    halves = half_levels(df, ranges)
+    for lv in levels + halves:
         _evaluate(lv, df, pivs)
-    return sorted(levels, key=lambda x: -x.score)
+    for h in halves:
+        h.score += 3.0     # 起点のはっきりした水準として優先
+    return sorted(levels + halves, key=lambda x: -x.score)
+
+
+def half_level(df: pd.DataFrame, i0: int, i1: int, label: str) -> Level | None:
+    """df[i0..i1] の高値・安値の半値と、その期間で初めて半値に到達した足（起点）。"""
+    n = len(df)
+    i0, i1 = max(0, i0), min(n - 1, i1)
+    if i1 - i0 < 4:
+        return None
+    hi, lo = df["High"].values, df["Low"].values
+    seg_hi, seg_lo = hi[i0:i1 + 1], lo[i0:i1 + 1]
+    jh, jl = i0 + int(np.argmax(seg_hi)), i0 + int(np.argmin(seg_lo))
+    mid = (hi[jh] + lo[jl]) / 2
+    touch = np.where((seg_lo <= mid) & (seg_hi >= mid))[0]
+    if not len(touch):
+        return None
+    o = i0 + int(touch[0])
+    d = lambda k: df.index[k].strftime("%Y-%m-%d" if df.index[k].hour == 0 else "%m-%d %H:%M")
+    lv = Level(float(mid), o, df.index[o],
+               f"半値水準（{label}の高値 {hi[jh]:,.1f}［{d(jh)}］と安値 {lo[jl]:,.1f}［{d(jl)}］の半値、初到達 {d(o)}）")
+    lv.kind = "half"
+    lv.range = (int(i0), int(i1), int(jh), int(jl))
+    return lv
+
+
+def half_levels(df: pd.DataFrame, ranges: list[tuple[int, int, str]] | None = None) -> list[Level]:
+    n = len(df)
+    rs = list(ranges or [])
+    for b in (26, 52, 76, 129, 172, 257):
+        if b < n:
+            rs.append((n - b, n - 1, f"直近{b}本"))
+    out: list[Level] = []
+    for i0, i1, lab in rs:
+        lv = half_level(df, i0, i1, lab)
+        if lv is None:
+            continue
+        dup = next((x for x in out if abs(x.price - lv.price) / lv.price <= 0.004 and x.origin_i == lv.origin_i), None)
+        if dup is None:
+            out.append(lv)
+    return out
 
 
 def _jp(name: str) -> str:
@@ -136,6 +183,6 @@ def level_change_dates(levels: list[Level], index_ext: pd.DatetimeIndex, n_bars:
             j = lv.origin_i + b - 1
             if n_bars - 3 <= j < n_bars + horizon:
                 out.append(ChangeDate(j, index_ext[j], "level", b, lv.origin, "level",
-                                      f"相場水準 {lv.price:,.1f}（{lv.source.split(' / ')[0]}）起点 {lv.origin.date()} から {b}{unit}目",
-                                      0.5 + min(lv.score, 10) / 10))
+                                      f"{'半値水準' if lv.kind == 'half' else '相場水準'} {lv.price:,.1f}（{lv.source.split(' / ')[0] if lv.kind != 'half' else '初到達'}）起点 {lv.origin.date()} から {b}{unit}目",
+                                      (0.5 + min(lv.score, 10) / 10) * (1.5 if lv.kind == "half" else 1.0)))
     return out
