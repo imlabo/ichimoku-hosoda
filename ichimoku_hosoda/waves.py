@@ -36,43 +36,48 @@ class Wave3:
         return nearest_basic(bars_between(self.A.i, i_d))
 
 
-def _origin_candidates(pivs: list[Pivot], df: pd.DataFrame, ci: int, max_back: int, lookback: int = 400) -> list[int]:
+def _origin_candidates(pivs: list[Pivot], ci: int, max_back: int, start: int, majors: list[int], ext: dict) -> list[int]:
     """C（pivs[ci]）に対する起点 A の候補 index。
-    ① 直近の同種の極（max_back 個）  ② rank>=3 の重要な極（距離に関係なく）
-    ③ 直近 lookback 本での最安値／最高値の極  — 細田：起点と中心点を変えつつ複数の三波動を確認する。"""
+    ① 直近の同種の極（max_back 個）  ② 評価範囲内の重要な極（rank>=3、直近 12 個まで）
+    ③ 評価範囲内の最安値／最高値の極  — 細田：起点と中心点を変えつつ複数の三波動を確認する。"""
     C = pivs[ci]
     cand = set()
     for ai in range(ci - 2, max(-1, ci - 2 - 2 * max_back), -2):
         cand.add(ai)
-    for ai in range(ci):
-        if pivs[ai].kind == C.kind and pivs[ai].rank >= 3:
-            cand.add(ai)
-    start = max(0, len(df) - lookback)
-    same = [ai for ai in range(ci) if pivs[ai].kind == C.kind and pivs[ai].i >= start]
-    if same:
-        ext = min(same, key=lambda ai: pivs[ai].price) if C.kind == "L" else max(same, key=lambda ai: pivs[ai].price)
-        cand.add(ext)
+    cand.update(ai for ai in majors if ai < ci and pivs[ai].kind == C.kind)
+    e = ext.get(C.kind)
+    if e is not None and e < ci:
+        cand.add(e)
     return sorted(cand, reverse=True)
 
 
 def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 20, max_back: int = 4,
-                force_a: int | None = None) -> list[Wave3]:
-    """直近 max_recent 個の極を C（第二波動の終点）候補とし、起点 A は _origin_candidates から選ぶ。
-    force_a を与えると、その極を起点にした三波動のみを返す（手動指定）。"""
+                force_a: int | None = None, lookback: int = 400) -> list[Wave3]:
+    """C（第二波動の終点）候補 = 直近 max_recent 個の極＋評価範囲内の重要極。
+    起点 A = _origin_candidates。force_a を与えるとその極を起点にした三波動のみ。"""
     out: list[Wave3] = []
     n = len(pivs)
+    if n < 3:
+        return out
     hi, lo = df["High"].values, df["Low"].values
-    c_idx = sorted(set(range(max(2, n - max_recent), n)) | {k for k in range(2, n) if pivs[k].rank >= 3})
+    n_bars = len(df)
+    start = max(0, n_bars - lookback)
+    in_win = [k for k in range(n) if pivs[k].i >= start]
+    majors = [k for k in in_win if pivs[k].rank >= 3][-24:]
+    lows = [k for k in in_win if pivs[k].kind == "L"]
+    highs = [k for k in in_win if pivs[k].kind == "H"]
+    ext = {"L": min(lows, key=lambda k: pivs[k].price) if lows else None,
+           "H": max(highs, key=lambda k: pivs[k].price) if highs else None}
+    c_idx = sorted(set(range(max(2, n - max_recent), n)) | {k for k in majors if k >= 2})
     for ci in c_idx:
         C = pivs[ci]
-        a_list = [force_a] if force_a is not None else _origin_candidates(pivs, df, ci, max_back)
+        a_list = [force_a] if force_a is not None else _origin_candidates(pivs, ci, max_back, start, majors, ext)
         for ai in a_list:
-            if ai is None or ai >= ci:
+            if ai is None or ai >= ci or ai < 0:
                 continue
             A = pivs[ai]
             if A.kind != C.kind:
                 continue
-            # B = A〜C 間の極値
             seg = slice(A.i, C.i + 1)
             if A.kind == "L":
                 bi = A.i + int(np.argmax(hi[seg]))
@@ -89,6 +94,7 @@ def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 20, max_b
             for p in pivs:
                 if p.i == bi:
                     B = p
+                    break
             ab, bc, ac = bars_between(A.i, B.i), bars_between(B.i, C.i), bars_between(A.i, C.i)
             if ab < 3:
                 continue
@@ -106,49 +112,54 @@ def build_waves(pivs: list[Pivot], df: pd.DataFrame, max_recent: int = 20, max_b
                 w.achieved = {k: w.extreme_since_c <= v for k, v in w.calc.items()}
                 w.note = "N候補（戻りが起点より下）" if c < a else "戻りが起点を超える→下げ三波動としては不成立"
             out.append(w)
-    # 同じ A・C の組は 1 つに（B は極値で決まるため重複し得る）
+
+    # 同じ A・C の組は 1 つに
     uniq, seen = [], set()
     for w in out:
         k = (w.A.i, w.C.i)
         if k not in seen:
             seen.add(k)
             uniq.append(w)
-    n_bars = len(df)
-    start = max(0, n_bars - 400)
-    lows = [p for p in pivs if p.kind == "L" and p.i >= start]
-    highs = [p for p in pivs if p.kind == "H" and p.i >= start]
-    ext_low = min(lows, key=lambda p: p.price).i if lows else None
-    ext_high = max(highs, key=lambda p: p.price).i if highs else None
+
+    # B 以降の「最大の戻り高値／最深の押し安値」を事前計算（後ろからの累積）
+    nat_after_h: dict[int, int] = {}
+    nat_after_l: dict[int, int] = {}
+    best_h = best_l = None
+    pos_list = sorted(range(n), key=lambda k: pivs[k].i, reverse=True)
+    for k in pos_list:
+        p = pivs[k]
+        nat_after_h[p.i] = best_h
+        nat_after_l[p.i] = best_l
+        if p.kind == "H" and (best_h is None or p.price > pivs[best_h].price):
+            best_h = k
+        if p.kind == "L" and (best_l is None or p.price < pivs[best_l].price):
+            best_l = k
 
     def score(w: Wave3) -> float:
         sc = 2.5 * w.A.rank + 1.5 * w.C.rank
-        if (w.direction == "up" and w.A.i == ext_low) or (w.direction == "down" and w.A.i == ext_high):
-            sc += 4            # 期間の最安値（最高値）を起点とする三波動は常に見るべき
+        if (w.direction == "up" and ext["L"] is not None and w.A.i == pivs[ext["L"]].i) or \
+           (w.direction == "down" and ext["H"] is not None and w.A.i == pivs[ext["H"]].i):
+            sc += 4            # 期間の最安値（最高値）を起点とする三波動
         if w.C.i >= n_bars - 60:
             sc += 3            # C が直近
-        # C が B 以降の最大の戻り（上げなら最深の押し）なら自然な第二波動
-        after = [p for p in pivs if p.i > w.B.i and p.kind == w.C.kind]
-        if after:
-            nat = max(after, key=lambda p: p.price) if w.direction == "down" else min(after, key=lambda p: p.price)
-            if nat.i == w.C.i:
-                sc += 3
+        nat = nat_after_h.get(w.B.i) if w.direction == "down" else nat_after_l.get(w.B.i)
+        if nat is not None and pivs[nat].i == w.C.i:
+            sc += 3            # C が B 以降の最大の戻り（最深の押し）＝素直な第二波動
         if w.A.i < start:
-            sc -= 3            # 起点が表示・評価範囲より前
-        ab_px, bc_px = abs(w.B.price - w.A.price), abs(w.C.price - w.B.price)
-        if ab_px >= bc_px:
-            sc += 2            # 第一波動の値幅が第二波動より大きい（N 型として自然）
+            sc -= 3
+        if abs(w.B.price - w.A.price) >= abs(w.C.price - w.B.price):
+            sc += 2
         if w.ab / max(w.ac, 1) < 0.25:
-            sc -= 3            # 第一波動が極端に短く第二波動がだらだら長い（B が早すぎる）
+            sc -= 3
         if w.bc > 2 * w.ab:
             sc -= 2
         return sc
 
-    uniq.sort(key=lambda w: -score(w))
-    # 起点ごとの多様性: 同じ A は最大 3 件、全体で 14 件
+    scored = sorted(((score(w), w) for w in uniq), key=lambda t: -t[0])
     per_a: dict[int, int] = {}
     picked = []
-    for w in uniq:
-        if per_a.get(w.A.i, 0) >= 3:
+    for _, w in scored:
+        if force_a is None and per_a.get(w.A.i, 0) >= 3:
             continue
         per_a[w.A.i] = per_a.get(w.A.i, 0) + 1
         picked.append(w)

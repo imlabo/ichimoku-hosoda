@@ -13,7 +13,7 @@ import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import data, margin
+from . import data, margin, names
 from .engine import analyze
 from .serialize import result_to_json, waves_to_json
 from . import waves as wavemod
@@ -32,6 +32,19 @@ _LAST: dict = {}
 
 
 def _with_inverse(src: pd.DataFrame, label: str, unit: str, horizon: int, nbar_specs, zz=None, extra_lag=None, bars=300, key=None):
+    try:
+        return _with_inverse_inner(src, label, unit, horizon, nbar_specs, zz, extra_lag, bars, key)
+    except Exception as e:  # noqa: BLE001  1 つの足種の失敗で全体を止めない
+        import traceback
+        traceback.print_exc()
+        _ERRORS.append(f"{label}: 分析エラー（{type(e).__name__}: {e}）")
+        return None, None
+
+
+_ERRORS: list = []
+
+
+def _with_inverse_inner(src, label, unit, horizon, nbar_specs, zz, extra_lag, bars, key):
     kw = dict(nbar_specs=nbar_specs, extra_lag=extra_lag)
     if zz:
         kw["zz_thresholds"] = zz
@@ -86,8 +99,20 @@ def plotly_js():
     return FileResponse(Path(plotly.__file__).parent / "package_data" / "plotly.min.js", media_type="application/javascript")
 
 
+@app.get("/api/search")
+def api_search(q: str, limit: int = 15):
+    return JSONResponse({"results": names.search(q, limit), "status": names.status()})
+
+
+@app.on_event("startup")
+def _warm():
+    names.warmup()
+
+
 @app.get("/api/analyze")
 def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int = 1):
+    raw_code = code
+    code, disp = names.resolve(code)
     key = (code.strip().upper(), period, horizon, intraday)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SEC:
@@ -110,7 +135,14 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
                 idf = None
             intra[key2] = (idf, label, zz)
     _LAST.clear()
+    _ERRORS.clear()
     res = analyze_all(df, data.normalize_symbol(code), horizon, intra, full_df=full)
+    res["frames"] = {k: v for k, v in res["frames"].items() if v is not None}
+    res["notes"] = res.get("notes", []) + list(_ERRORS)
+    res["display_name"] = disp or (names.name_for(code) if not demo else "デモデータ")
+    res["input"] = raw_code
+    if "daily" not in res["frames"]:
+        raise HTTPException(500, "日足の分析に失敗しました: " + " / ".join(_ERRORS))
     _results[(key[0], period)] = dict(_LAST)
     res["margin"] = margin.synthetic_margin() if demo else margin.fetch_margin(code)
     _cache[key] = (time.time(), res)
@@ -120,6 +152,7 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
 @app.get("/api/waves_from")
 def api_waves_from(code: str, frame: str, a_i: int, period: str = "6y"):
     """チャート上で選んだ極（pivot index a_i）を起点 A にした三波動候補を返す。"""
+    code, _ = names.resolve(code)
     store = _results.get((code.strip().upper(), period)) or {}
     r = store.get(frame)
     if r is None:
@@ -139,7 +172,11 @@ async def api_analyze_csv(file: UploadFile = File(...), name: str = Form("CSV"),
         df = data.load_csv(io.BytesIO(raw))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"CSV を読めませんでした: {e}") from e
-    return JSONResponse(analyze_all(df, name or file.filename, horizon))
+    _ERRORS.clear()
+    res = analyze_all(df, name or file.filename, horizon)
+    res["frames"] = {k: v for k, v in res["frames"].items() if v is not None}
+    res["notes"] = res.get("notes", []) + list(_ERRORS)
+    return JSONResponse(res)
 
 
 def main():

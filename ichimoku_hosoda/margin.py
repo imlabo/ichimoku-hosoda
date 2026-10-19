@@ -30,7 +30,7 @@ def _num(x) -> float | None:
 
 def fetch_margin(code: str, weeks: int = 5) -> dict:
     """{'rows': [{'date','sell','buy','ratio','sell_chg','buy_chg'}...], 'source': url} / 失敗時は {'error': ...}。"""
-    c = code.strip().upper().replace(".T", "")
+    c = re.sub(r"\.T$", "", code.strip().upper())
     if not re.fullmatch(r"[0-9][0-9A-Z]{3}", c):
         return {"error": "信用残は東証個別銘柄のみ"}
     url = f"https://finance.yahoo.co.jp/quote/{c}.T/margin"

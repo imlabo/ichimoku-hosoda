@@ -13,7 +13,12 @@ header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 18px
 header h1{font-size:16px;margin:0 14px 0 0;font-weight:600;letter-spacing:.02em}
 header h1 small{color:var(--mute);font-weight:400;margin-left:8px}
 input,select,button{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
-input#code{width:140px;font-size:16px;letter-spacing:.05em}
+input#code{font-size:15px}
+#sugg div{padding:6px 10px;cursor:pointer;display:flex;gap:8px;align-items:baseline}
+#sugg div:hover,#sugg div.on{background:#f6f0e6}
+#sugg b{min-width:64px;font-variant-numeric:tabular-nums}
+#sugg span{color:var(--mute);font-size:11px;margin-left:auto;white-space:nowrap}
+#stockname{font-size:15px;font-weight:600;margin-left:4px}
 button.primary{background:var(--ink);color:#fff;border-color:var(--ink);cursor:pointer}
 button.primary:disabled{opacity:.5;cursor:wait}
 label.file{color:var(--mute);cursor:pointer;font-size:12px}
@@ -58,7 +63,10 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
 <body>
 <header>
   <h1>一目均衡表 節目判定<small>細田哲生（三世一目山人）理論ベース</small></h1>
-  <input id="code" placeholder="9201 / N225 / USDJPY" value="">
+  <div style="position:relative">
+    <input id="code" placeholder="コード or 銘柄名（例: 4506 / 住友ファーマ / 日経平均）" value="" autocomplete="off" style="width:300px">
+    <div id="sugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.08);z-index:20;max-height:320px;overflow:auto;font-size:13px"></div>
+  </div>
   <select id="period" title="日足の期間（週足・月足もこの範囲から作成）"><option value="6mo">6か月</option><option value="1y">1年</option><option value="3y">3年</option><option value="6y" selected>6年</option></select>
   <button class="primary" id="go">分析</button>
   <label class="file">CSV を読む <input type="file" id="csv" accept=".csv,text/csv"></label>
@@ -89,10 +97,26 @@ async function run(){
   try{
     const r=await fetch(`/api/analyze?code=${encodeURIComponent(code)}&period=${$('#period').value}`);
     if(!r.ok){const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail)}
-    DATA=await r.json(); FRAME='daily'; render(); st(`${DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`);
+    DATA=await r.json(); FRAME='daily'; SEL_WAVE=0; render(); st(`${DATA.display_name?DATA.display_name+'（'+DATA.name+'）':DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`);
   }catch(e){st(e.message,true)} finally{$('#go').disabled=false}
 }
-$('#go').onclick=run; $('#code').addEventListener('keydown',e=>{if(e.key==='Enter')run()});
+$('#go').onclick=()=>{hideSugg();run()};
+let SUGG=[], SUGG_I=-1, sTimer=null;
+const hideSugg=()=>{$('#sugg').style.display='none'; SUGG_I=-1};
+const pick=i=>{const x=SUGG[i]; if(!x) return; $('#code').value=x.code; hideSugg(); run()};
+const drawSugg=()=>{const b=$('#sugg'); if(!SUGG.length){hideSugg();return}
+  b.innerHTML=SUGG.map((x,i)=>`<div class="${i===SUGG_I?'on':''}" data-i="${i}"><b>${x.code}</b>${x.name}<span>${x.market||''}${x.industry?'・'+x.industry:''}</span></div>`).join('');
+  b.style.display='block'; b.querySelectorAll('div').forEach(d=>d.onmousedown=e=>{e.preventDefault(); pick(+d.dataset.i)})};
+$('#code').addEventListener('input',()=>{clearTimeout(sTimer); const q=$('#code').value.trim(); if(!q){SUGG=[];hideSugg();return}
+  sTimer=setTimeout(async()=>{try{const r=await fetch('/api/search?q='+encodeURIComponent(q)); const j=await r.json(); SUGG=j.results||[]; SUGG_I=-1; drawSugg()}catch(e){}},220)});
+$('#code').addEventListener('keydown',e=>{
+  if($('#sugg').style.display==='block'&&SUGG.length){
+    if(e.key==='ArrowDown'){SUGG_I=Math.min(SUGG.length-1,SUGG_I+1);drawSugg();e.preventDefault();return}
+    if(e.key==='ArrowUp'){SUGG_I=Math.max(0,SUGG_I-1);drawSugg();e.preventDefault();return}
+    if(e.key==='Enter'&&SUGG_I>=0){pick(SUGG_I);e.preventDefault();return}
+    if(e.key==='Escape'){hideSugg();return}}
+  if(e.key==='Enter'){hideSugg();run()}});
+$('#code').addEventListener('blur',()=>setTimeout(hideSugg,150));
 $('#csv').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f)return; const fd=new FormData(); fd.append('file',f); fd.append('name',f.name.replace(/\.csv$/i,''));
   st(`${f.name} を分析中…`);
@@ -119,7 +143,12 @@ function drawChart(F){
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
   const o={date:O.date.slice(from),open:O.open.slice(from),high:O.high.slice(from),low:O.low.slice(from),close:O.close.slice(from)};
   const L=F.lines, lfrom=L.date.indexOf(o.date[0]); const Ls={}; for(const k in L) Ls[k]=L[k].slice(lfrom<0?0:lfrom);
-  const u=F.unit, allDates=o.date.concat(F.future_dates.filter(d=>!Ls.date.includes(d)));
+  const u=F.unit;
+  // 横軸（カテゴリ）: 実バー＋将来の日付を時系列順に。D 予測日が遠い場合はその日まで延ばす
+  const fut=F.future_all||F.future_dates, selW=F.waves[SEL_WAVE]||F.waves[0];
+  const want=new Set(F.future_dates.concat(Ls.date.filter(d=>d>o.date[o.date.length-1])));
+  if(selW&&LY('ly_d')) selW.d_info.forEach(d=>{ if(d.date&&d.offset>=0){ const k=fut.indexOf(d.date); if(k>=0) fut.slice(0,k+3).forEach(x=>want.add(x)) } });
+  const allDates=o.date.concat(fut.filter(d=>want.has(d)));
   const traces=[
     {x:allDates,y:allDates.map(()=>null),type:'scatter',mode:'markers',marker:{opacity:0},showlegend:false,hoverinfo:'skip'},
     {type:'candlestick',x:o.date,open:o.open,high:o.high,low:o.low,close:o.close,name:'実線',
@@ -184,12 +213,13 @@ function drawChart(F){
     const seen=new Set(); const ws=[F.waves[SEL_WAVE]||F.waves[0]].filter(Boolean);
     ws.forEach((w,wi)=>w.d_info.forEach(d=>{ if(!d.date||d.offset<0||seen.has(d.date)) return; seen.add(d.date);
       shapes.push({type:'line',x0:d.date,x1:d.date,y0:ymin+span*.55,y1:ymax+span*.04,line:{color:'#0e7c86',width:1.4,dash:'dot'}});
-      ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
+      ann.push({x:d.date,y:ymax+span*.075,text:`<b>${d.date.slice(5)}</b>`,showarrow:false,font:{size:10,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.9)',xanchor:'center',yanchor:'bottom'});
+      ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（+${d.offset}${u}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
   Plotly.newPlot('chart',traces,{
-    title:{text:`${DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
+    title:{text:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
-    yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[ymin-span*.08,ymax+span*.08]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
+    yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[ymin-span*.08,ymax+span*.12]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
     hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false});
   const gd=$('#chart'); gd.removeAllListeners&&gd.removeAllListeners('plotly_click');
   gd.on('plotly_click',async ev=>{const pt=ev.points&&ev.points[0]; if(!pt||!(pt.data.name==='高値'||pt.data.name==='安値')) return;

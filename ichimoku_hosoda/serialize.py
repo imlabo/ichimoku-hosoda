@@ -43,6 +43,7 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
                    for p in res.pivots if p.date >= df.index[0]],
         "levels": [_level(l, res, n) for l in res.levels[:8]],
         "future_dates": [_d(d) for d in res.index_ext[n:n + res.horizon]],
+        "future_all": [_d(d) for d in res.index_ext[n:n + 260]],   # D 予測日など遠い日付の並び順用
         "calc": [{"price": _f(c["price"]), "kinds": c["kinds"], "n": c["n"], "achieved": bool(c["achieved"]),
                   "pct": round(c["pct_from_close"], 2)} for c in res.calc_clusters],
         "change_dates": [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
