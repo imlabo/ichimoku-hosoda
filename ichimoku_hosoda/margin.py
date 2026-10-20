@@ -1,7 +1,7 @@
 """信用残（週次）の直近推移。
 
 取得元: Yahoo!ファイナンス（日本）の信用残ページ https://finance.yahoo.co.jp/quote/<code>.T/margin
-  表「日付 / 売り残 / 買い残 / 信用倍率 / 前週比」をそのまま読む（週次・直近約1か月分を返す）。
+  表「日付 / 売り残 / 買い残 / 信用倍率 / 前週比」をそのまま読む（週次・ページにある分（最大約1年）を返す）。
 ページ構成が変わった場合は取得不可として notes に理由を返す（アプリ本体は動く）。
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _num(x) -> float | None:
         return None
 
 
-def fetch_margin(code: str, weeks: int = 5) -> dict:
+def fetch_margin(code: str, weeks: int = 60) -> dict:
     """{'rows': [{'date','sell','buy','ratio','sell_chg','buy_chg'}...], 'source': url} / 失敗時は {'error': ...}。"""
     c = re.sub(r"\.T$", "", code.strip().upper())
     if not re.fullmatch(r"[0-9][0-9A-Z]{3}", c):
@@ -86,10 +86,10 @@ def fetch_margin(code: str, weeks: int = 5) -> dict:
     return {"rows": rows, "source": url}
 
 
-def synthetic_margin() -> dict:
+def synthetic_margin(end=None, weeks: int = 30) -> dict:
     import numpy as np
     rng = np.random.default_rng(5)
-    dates = pd.date_range(end=pd.Timestamp.today(), periods=5, freq="W-FRI")
+    dates = pd.date_range(end=pd.Timestamp(end) if end is not None else pd.Timestamp.today(), periods=weeks, freq="W-FRI")
     buy, sell = 1_200_000, 300_000
     rows = []
     for d in dates:

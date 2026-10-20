@@ -145,7 +145,7 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     if "daily" not in res["frames"]:
         raise HTTPException(500, "日足の分析に失敗しました: " + " / ".join(_ERRORS))
     _results[(key[0], period)] = dict(_LAST)
-    res["margin"] = margin.synthetic_margin() if demo else margin.fetch_margin(code)
+    res["margin"] = margin.synthetic_margin(end=full.index[-1]) if demo else margin.fetch_margin(code)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 

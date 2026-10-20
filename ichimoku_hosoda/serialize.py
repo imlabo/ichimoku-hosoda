@@ -37,7 +37,8 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
         "last_date": _d(df.index[-1]), "close": _f(df["Close"].iloc[-1]),
         "ohlc": {"date": [_d(d) for d in df.index],
                  "open": [_f(v) for v in df["Open"]], "high": [_f(v) for v in df["High"]],
-                 "low": [_f(v) for v in df["Low"]], "close": [_f(v) for v in df["Close"]]},
+                 "low": [_f(v) for v in df["Low"]], "close": [_f(v) for v in df["Close"]],
+                 "volume": [_f(v) for v in df["Volume"]] if "Volume" in df.columns else None},
         "lines": {"date": [_d(d) for d in L.index]},
         "pivots": [{"date": _d(p.date), "price": _f(p.price), "kind": p.kind, "rank": p.rank, "i": p.i}
                    for p in res.pivots if p.date >= df.index[0]],

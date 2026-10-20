@@ -79,6 +79,8 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
   <label><input type="checkbox" id="ly_cd" checked> 変化日</label>
   <label><input type="checkbox" id="ly_d" checked> D予測日</label>
   <label><input type="checkbox" id="ly_piv" checked> 高値安値ラベル</label>
+  <label><input type="checkbox" id="ly_vol" checked> 出来高</label>
+  <label><input type="checkbox" id="ly_mg" checked> 信用残</label>
   　本数: <select id="bars"><option value="120">120</option><option value="200" selected>200</option><option value="320">320</option></select>
   <button id="recalc" disabled style="margin-left:14px;padding:4px 12px;font-size:12px;border-color:#b03a2e;color:#b03a2e;cursor:pointer">A・B・C で再計算</button>
   <button id="clearabc" style="display:none;padding:4px 10px;font-size:12px;cursor:pointer">手動の A・B・C を解除</button>
@@ -143,12 +145,19 @@ function render(){
   ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
 let SEL_LEVEL=null;
-['ly_level','ly_calc','ly_cd','ly_d','ly_piv','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
+['ly_level','ly_calc','ly_cd','ly_d','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
 const LY=id=>$('#'+id).checked;
 
 function drawChart(F){
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
-  const o={date:O.date.slice(from),open:O.open.slice(from),high:O.high.slice(from),low:O.low.slice(from),close:O.close.slice(from)};
+  const o={date:O.date.slice(from),open:O.open.slice(from),high:O.high.slice(from),low:O.low.slice(from),close:O.close.slice(from),volume:O.volume?O.volume.slice(from):null};
+  const VOL=LY('ly_vol')&&o.volume&&o.volume.some(v=>v>0);
+  // 信用残（週次）を日足・週足の時間軸に合わせる：各週の値を、その日以前で最も近い足に置く
+  const MGR=(DATA.margin&&DATA.margin.rows)||[], isD=/^(daily|weekly)/.test(FRAME);
+  const mg=(LY('ly_mg')&&isD&&MGR.length)?(()=>{const pts=[]; MGR.forEach(r=>{ if(!/^\d{4}-/.test(r.date)) return;
+      let k=-1; for(let i=o.date.length-1;i>=0;i--){ if(o.date[i]<=r.date){k=i;break} } if(k<0) return; pts.push({x:o.date[k],r})});
+      return pts.length?pts:null})():null;
+  const DOM=mg&&VOL?{p:[0.40,1],v:[0.22,0.36],m:[0,0.18]}:mg?{p:[0.24,1],m:[0,0.2]}:VOL?{p:[0.22,1],v:[0,0.18]}:{p:[0,1]};
   const L=F.lines, lfrom=L.date.indexOf(o.date[0]); const Ls={}; for(const k in L) Ls[k]=L[k].slice(lfrom<0?0:lfrom);
   const u=F.unit;
   // 横軸（カテゴリ）: 実バー＋将来の日付を時系列順に。D 予測日が遠い場合はその日まで延ばす
@@ -160,6 +169,12 @@ function drawChart(F){
     {x:allDates,y:allDates.map(()=>null),type:'scatter',mode:'markers',marker:{opacity:0},showlegend:false,hoverinfo:'skip'},
     {type:'candlestick',x:o.date,open:o.open,high:o.high,low:o.low,close:o.close,name:'実線',
      increasing:{line:{color:'#c0392b',width:1}},decreasing:{line:{color:'#1f5f8b',width:1}},whiskerwidth:.3,hoverinfo:'x+y'},
+    ...(VOL?[{type:'bar',x:o.date,y:o.volume,yaxis:'y2',name:'出来高',showlegend:false,
+      marker:{color:o.close.map((c,i)=>c>=o.open[i]?'rgba(192,57,43,.55)':'rgba(31,95,139,.55)')},hovertemplate:'出来高 %{x}<br>%{y:,.0f}<extra></extra>'}]:[]),
+    ...(mg?[{x:mg.map(p=>p.x),y:mg.map(p=>p.r.buy),yaxis:'y3',name:'買い残',mode:'lines+markers',line:{color:'#c0392b',width:1.5,shape:'hv'},marker:{size:4},
+              customdata:mg.map(p=>[p.r.date,p.r.ratio]),hovertemplate:'買い残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<extra></extra>'},
+             {x:mg.map(p=>p.x),y:mg.map(p=>p.r.sell),yaxis:'y3',name:'売り残',mode:'lines+markers',line:{color:'#1f5f8b',width:1.5,shape:'hv'},marker:{size:4},
+              customdata:mg.map(p=>[p.r.date,p.r.ratio]),hovertemplate:'売り残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<extra></extra>'}]:[]),
     {x:Ls.date,y:Ls.span_tk,name:'先行(基準転換)',line:{color:'#8e9aaf',width:1},hoverinfo:'skip'},
     {x:Ls.date,y:Ls.span_52,name:'先行(52)',line:{color:'#8e9aaf',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(142,154,175,.18)',hoverinfo:'skip'},
     {x:Ls.date,y:Ls.tenkan,name:'転換線(9)',line:{color:'#d35400',width:1.3}},
@@ -220,7 +235,7 @@ function drawChart(F){
         shapes.push({type:'line',x0,x1:lastX,y0:v,y1:v,line:{color:cc[k],width:1.6,dash:pd?'dash':wc.achieved[k]?'dot':'solid'}});
         ann.push({x:lastX,y:v,text:`<b>${k}</b> ${fmt(rp(v))}${pd?'（見込み）':wc.achieved[k]?' ✓達成':''}`,showarrow:false,xanchor:'right',yanchor:'bottom',font:{size:11,color:cc[k]},bgcolor:'rgba(255,255,255,.85)'});
         yext.push(v)});
-      if(neg.length) ann.push({xref:'paper',yref:'paper',x:1,y:0.01,text:`${neg.join('・')}（0 以下のため対象外）`,showarrow:false,xanchor:'right',yanchor:'bottom',font:{size:10,color:'#c0392b'},bgcolor:'rgba(255,255,255,.85)'});
+      if(neg.length) ann.push({xref:'paper',yref:'paper',x:1,y:DOM.p[0]+0.01,text:`${neg.join('・')}（0 以下のため対象外）`,showarrow:false,xanchor:'right',yanchor:'bottom',font:{size:10,color:'#c0392b'},bgcolor:'rgba(255,255,255,.85)'});
     }
   }
   // ---- 選択中の三波動 A-B-C（ドラッグで移動できる）
@@ -238,7 +253,7 @@ function drawChart(F){
     // 吸着先 = チャート上の ▲▼（表示中の高値・安値）
     ABC.piv=F.pivots.filter(p=>p.rank>=2&&inWin(p.date));
     traces.push({x:ABC.x.slice(),y:ABC.y.slice(),mode:'lines+markers+text',type:'scatter',name:`三波動 A-B-C${selW.manual?'（手動）':''}（起点 ${selW.A[0]}${out[0]?'・表示範囲外':''}）`,
-      text:['A','B','C'].map((l,j)=>l+(ABC.out[j]?'←範囲外':'')),textposition:'middle right',textfont:{size:13,color:col},line:{color:col,width:2,dash:PEND&&PEND.key===ABC.key?'dash':'solid'},
+      text:abcLabels(ABC.x,ABC.out),textposition:'middle right',textfont:{size:13,color:col},line:{color:col,width:2,dash:PEND&&PEND.key===ABC.key?'dash':'solid'},
       customdata:ABC.real.map(rp),marker:{symbol:'circle-open',size:17,color:col,line:{color:col,width:3}},hovertemplate:'%{text} %{x}<br>%{customdata:,.1f}<br>（ドラッグで移動）<extra></extra>'});
   }
   // ---- 変化日（上位5件、将来のみ）: 線は下 1/3、ラベルは下端に段差
@@ -257,10 +272,13 @@ function drawChart(F){
       ann.push({x:d.date,y:ymax+span*.075,text:`<b>${d.date.slice(5)}</b>`,showarrow:false,font:{size:10,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.9)',xanchor:'center',yanchor:'bottom'});
       ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（${past?`${-d.offset}${u}前・経過`:d.offset===0?'本日':`+${d.offset}${u}`}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
+  $('#chart').style.height=(mg&&VOL)?'720px':(mg||VOL)?'640px':'560px';
   Plotly.newPlot('chart',traces,{
     title:{text:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
-    yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
+    ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
+    ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
+    yaxis:Object.assign({domain:DOM.p,tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
     hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false}).then(gd=>deOverlap(gd));
   updRecalc(); drawCalcBox(F, selW, ABC&&PEND&&PEND.key===ABC.key?PEND:null);
   const gd=$('#chart'); setupDrag(gd);
@@ -278,6 +296,11 @@ function drawChart(F){
   $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
 }
 
+// 表示範囲外で同じ位置に寄せた点は、ラベルを1つにまとめる（例: 「A・B←範囲外」）
+function abcLabels(x,out){const L=['A','B','C'], t=['','',''];
+  for(let k=0;k<3;k++){ if(k<2&&x[k+1]===x[k]) continue; let j=k; while(j>0&&x[j-1]===x[k]) j--;
+    t[k]=L.slice(j,k+1).join('・')+(out.slice(j,k+1).some(Boolean)?'←範囲外':'') }
+  return t}
 // ---- 文字のかぶりをなくす：注釈は重要なものから順に置き、重なれば上下にずらす。
 //      高値・安値の数字は、注釈や他の数字と重なるものを隠す（マウスを当てれば値は出る）
 let DEOV_BUSY=false;
@@ -292,7 +315,7 @@ async function deOverlap(gd){
     const hit=(r)=>placed.some(q=>r.left<q.right+pad&&r.right>q.left-pad&&r.top<q.bottom+pad&&r.bottom>q.top-pad);
     const rectOf=el=>{const b=el.getBoundingClientRect(); return {left:b.left,right:b.right,top:b.top,bottom:b.bottom}};
     // 枠（描画領域）と軸の目盛り文字
-    const bg=gd.querySelector('.nsewdrag'); const P=bg?rectOf(bg):null;
+    const bg=(gd.querySelector('.draglayer .xy .nsewdrag')||gd.querySelector('.nsewdrag')); const P=bg?rectOf(bg):null;
     const inside=r=>!P||(r.top>=P.top-1&&r.bottom<=P.bottom+1);
     gd.querySelectorAll('.xtick text, .ytick text').forEach(t=>placed.push(rectOf(t)));
     // 1) 動かさない文字：A・B・C
@@ -345,7 +368,7 @@ function setupDrag(gd){
   const rel=e=>{const r=gd.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]};
   const hit=e=>{ if(!ABC||!gd._fullLayout||!gd.data[ABC.ti]) return -1; const [mx,my]=rel(e); let best=-1, bd=16;
     abcPx(gd).forEach((p,k)=>{const d=Math.hypot(p.px-mx,p.py-my); if(d<bd){bd=d;best=k}}); return best};
-  const setCursor=c=>{const el=gd.querySelector('.nsewdrag'); if(el) el.style.cursor=c};
+  const setCursor=c=>{const el=(gd.querySelector('.draglayer .xy .nsewdrag')||gd.querySelector('.nsewdrag')); if(el) el.style.cursor=c};
   gd.addEventListener('pointerdown',e=>{const k=hit(e); if(k<0) return;
     e.preventDefault(); e.stopPropagation(); DRAG={k, moved:false}; setCursor('grabbing')},true);
   gd.addEventListener('mousedown',e=>{ if(DRAG){e.preventDefault(); e.stopPropagation()} },true);
@@ -359,7 +382,7 @@ function setupDrag(gd){
     if(ABC.full[k]===p.i&&ABC.kind[k]===p.kind&&DRAG.moved) return;
     const kind=p.kind; ABC.kind[k]=kind; ABC.x[k]=p.date; ABC.real[k]=p.price; ABC.y[k]=Math.max(ABC.yl,Math.min(ABC.yh,p.price)); ABC.full[k]=p.i; ABC.out[k]=false; DRAG.moved=true;
     const lab=['A','B','C'];
-    Plotly.update(gd,{x:[ABC.x.slice()],y:[ABC.y.slice()],customdata:[ABC.real.map(ABC.rp)],text:[lab.map((l,j)=>l+(ABC.out[j]?'←範囲外':''))],'line.dash':'dash'},{'xaxis.type':'category'},[ABC.ti]);
+    Plotly.update(gd,{x:[ABC.x.slice()],y:[ABC.y.slice()],customdata:[ABC.real.map(ABC.rp)],text:[abcLabels(ABC.x,ABC.out)],'line.dash':'dash'},{'xaxis.type':'category'},[ABC.ti]);
     st(`${lab[k]} → ${p.date} の${kind==='L'?'安値':'高値'} ${fmt(ABC.rp(p.price))}`)},{passive:false});
   window.addEventListener('pointerup',()=>{ if(!DRAG) return; const d=DRAG; DRAG=null; setCursor(''); if(!d.moved) return;
     PEND={key:ABC.key, x:ABC.x.slice(), full:ABC.full.slice(), real:ABC.real.slice(), out:ABC.out.slice(), kind:ABC.kind.slice()}; updRecalc();
@@ -466,9 +489,9 @@ function drawSide(F){
     F.waves.slice(0,12).map((w,i)=>`<tr class="wv${i===SEL_WAVE?' sel':''}" data-i="${i}" style="cursor:pointer"><td>${i===SEL_WAVE?'▶':''}</td><td>${w.manual?'<span class="tag" style="background:#b03a2e;color:#fff">手動</span><br>':w.tag?'<span class="tag" style="background:#8a5a1e;color:#fff">定型</span><br>':''}${w.dir==='up'?'上げ':'下げ'}${w.tag&&!w.manual?`<div class="muted" style="font-size:10.5px;max-width:110px">${w.tag.replace(/^定型/,'')}</div>`:''}</td><td><b>${w.A[0]}</b><br>${fmt(w.A[1])} ${'★'.repeat(w.A_rank||1)}</td><td class="muted">B ${w.B[0]} ${fmt(w.B[1])}<br>C ${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${w.d_info.map(d=>`${d.rel}: ${d.date||'-'}${d.offset>=0?` (+${d.offset}${u})`:''}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
   if(FRAME.startsWith('daily')){ const M=DATA.margin;
-    h+=`<h2>信用残の推移（週次・直近約1か月）</h2>`;
+    h+=`<h2>信用残の推移（週次・直近約1か月。長い推移はチャート下段）</h2>`;
     if(!M||M.error){h+=`<div class="muted">取得できませんでした${M&&M.error?'：'+M.error:''}</div>`}
-    else{const rows=M.rows; const last=rows[rows.length-1], first=rows[0];
+    else{const rows=M.rows.slice(-5); const last=rows[rows.length-1], first=rows[0];
       const trend=(k,lab)=>{const a=first[k],b=last[k]; if(a==null||b==null) return ''; const d=b-a, pc=a?(d/a*100).toFixed(1):'-'; return `${lab} ${d>=0?'+':''}${fmt(d)}（${d>=0?'+':''}${pc}%）`};
       h+=`<div class="muted" style="margin-bottom:6px">${first.date}→${last.date}: ${trend('buy','買い残')}、${trend('sell','売り残')}、信用倍率 ${first.ratio??'-'}→${last.ratio??'-'}</div>`;
       h+=`<table><tr><th>日付</th><th class="num">買い残</th><th class="num">前週比</th><th class="num">売り残</th><th class="num">前週比</th><th class="num">倍率</th></tr>`+
