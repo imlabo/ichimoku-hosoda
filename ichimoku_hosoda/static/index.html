@@ -261,9 +261,11 @@ function drawChart(F){
     title:{text:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
     yaxis:Object.assign({tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
-    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false});
+    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false}).then(gd=>deOverlap(gd));
   updRecalc(); drawCalcBox(F, selW, ABC&&PEND&&PEND.key===ABC.key?PEND:null);
-  const gd=$('#chart'); setupDrag(gd); gd.removeAllListeners&&gd.removeAllListeners('plotly_click');
+  const gd=$('#chart'); setupDrag(gd);
+  gd.removeAllListeners&&gd.removeAllListeners('plotly_relayout'); gd.on('plotly_relayout',()=>{ if(!DEOV_BUSY) setTimeout(()=>deOverlap(gd),30) });
+  if(!window._deovR){window._deovR=true; window.addEventListener('resize',()=>setTimeout(()=>deOverlap($('#chart')),250))} gd.removeAllListeners&&gd.removeAllListeners('plotly_click');
   gd.on('plotly_click',async ev=>{const pt=ev.points&&ev.points[0]; if(!pt||!(pt.data.name==='高値'||pt.data.name==='安値')) return;
     const piv=F.pivots.find(p=>p.date===pt.x&&Math.abs(p.price-pt.y)<1e-6); if(!piv) return;
     st(`起点 A = ${piv.date} ${fmt(rp(piv.price))} の三波動を計算中…`);
@@ -274,6 +276,48 @@ function drawChart(F){
       const add=j.waves.filter(w=>!have.has(key(w))); F.waves=add.concat(F.waves); SEL_WAVE=0; drawChart(F); drawSide(F);
       st(`起点 ${piv.date} の三波動 ${j.waves.length} 件を追加（先頭に表示）`)}catch(e){st(e.message,true)}});
   $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
+}
+
+// ---- 文字のかぶりをなくす：注釈は重要なものから順に置き、重なれば上下にずらす。
+//      高値・安値の数字は、注釈や他の数字と重なるものを隠す（マウスを当てれば値は出る）
+let DEOV_BUSY=false;
+function annPrio(t){t=String(t||'');
+  if(/^<b>(E|N|V|NT)<\/b>/.test(t)) return 0; if(/対象外/.test(t)) return 0;
+  if(/^<b>\d\d-\d\d<\/b>$/.test(t)) return 1; if(/^D /.test(t)) return 2;
+  if(/手動A以降/.test(t)) return 3; if(/^(半値|水準)\d/.test(t)) return 4; if(/^\d\d-\d\d（/.test(t)) return 5; return 6}
+async function deOverlap(gd){
+  if(DEOV_BUSY||!gd||!gd.layout) return; DEOV_BUSY=true;
+  try{
+    const anns=gd.layout.annotations||[], placed=[], pad=2;
+    const hit=(r)=>placed.some(q=>r.left<q.right+pad&&r.right>q.left-pad&&r.top<q.bottom+pad&&r.bottom>q.top-pad);
+    const rectOf=el=>{const b=el.getBoundingClientRect(); return {left:b.left,right:b.right,top:b.top,bottom:b.bottom}};
+    // 枠（描画領域）と軸の目盛り文字
+    const bg=gd.querySelector('.nsewdrag'); const P=bg?rectOf(bg):null;
+    const inside=r=>!P||(r.top>=P.top-1&&r.bottom<=P.bottom+1);
+    gd.querySelectorAll('.xtick text, .ytick text').forEach(t=>placed.push(rectOf(t)));
+    // 1) 動かさない文字：A・B・C
+    gd.querySelectorAll('.scatterlayer .textpoint text').forEach(t=>{ if(/^[ABC]/.test(t.textContent)) placed.push(rectOf(t)) });
+    // 2) 注釈：重要度順に、重ならない位置まで上下にずらす
+    const hid={}; anns.forEach((a,i)=>{ if(a.visible===false) hid[`annotations[${i}].visible`]=true });
+    if(Object.keys(hid).length) await Plotly.relayout(gd,hid);
+    const els={}; gd.querySelectorAll('.annotation').forEach(g=>{const i=+g.getAttribute('data-index'); if(!isNaN(i)) els[i]=g});
+    const order=anns.map((a,i)=>i).filter(i=>els[i]).sort((a,b)=>annPrio(anns[a].text)-annPrio(anns[b].text)||a-b);
+    const upd={};
+    order.forEach(i=>{const cur=anns[i].yshift||0, b=rectOf(els[i]), h=b.bottom-b.top;
+      const base={left:b.left,right:b.right,top:b.top+cur,bottom:b.bottom+cur};   // ずらす前の位置
+      let best=null;
+      for(let k=0;k<20;k++){const dy=(k%2?1:-1)*Math.ceil(k/2)*(h+pad); const r={...base,top:base.top+dy,bottom:base.bottom+dy}; if(!hit(r)&&(inside(r)||!inside(base))){best=dy;break}}
+      const vis=best!==null||annPrio(anns[i].text)<=2;   // 置き場所がなければ優先度の低い注釈は隠す（計算値・D は必ず残す）
+      if(best===null) best=0;
+      if(vis) placed.push({...base,top:base.top+best,bottom:base.bottom+best});
+      if(-best!==cur) upd[`annotations[${i}].yshift`]=-best;
+      if((anns[i].visible!==false)!==vis) upd[`annotations[${i}].visible`]=vis});
+    if(Object.keys(upd).length) await Plotly.relayout(gd,upd);
+    // 3) 高値・安値の数字：重なるものは隠す（右＝新しい順に優先）
+    const nums=[...gd.querySelectorAll('.scatterlayer .textpoint text')].filter(t=>!/^[ABC]/.test(t.textContent));
+    nums.sort((a,b)=>b.getBoundingClientRect().left-a.getBoundingClientRect().left);
+    nums.forEach(t=>{t.style.display=''; const r=rectOf(t); if(r.right-r.left===0) return; if(hit(r)) t.style.display='none'; else placed.push(r)});
+  }finally{DEOV_BUSY=false}
 }
 
 // ---- A・B・C のドラッグ（▲▼ の位置にだけ吸着）→「再計算」ボタンで計算
