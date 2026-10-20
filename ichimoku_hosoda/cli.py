@@ -40,7 +40,7 @@ def run(df: pd.DataFrame, name: str, out_dir: Path, horizon_d: int = 60, make_ch
             results["monthly"] = monthly
             reports.append(monthly.to_markdown(max_dates=6, max_levels=5))
 
-    head = [f"# {name} ― 一目均衡表 節目判定（細田哲生理論ベース）",
+    head = [f"# {name} ― 一目均衡表 節目判定",
             f"データ: {df.index[0].date()} 〜 {df.index[-1].date()}（{len(df)} 本）",
             "",
             "> 読み方: ①均衡表で上げ／下げ／もみ合いを直観 → ②三波動構成（起点と中心点）を定める → "

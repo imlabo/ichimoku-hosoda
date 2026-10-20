@@ -8,7 +8,7 @@ app_port: 7860
 pinned: false
 ---
 
-# ichimoku_hosoda ― 細田哲生理論ベースの一目均衡表 節目判定ツール
+# ichimoku_hosoda ― 一目均衡表 節目判定ツール
 
 株式コードを入れると、日足・週足・月足で
 
