@@ -1,6 +1,9 @@
-"""信用残（週次）の直近推移。
+"""信用残（週次）の推移。
 
-取得元: Yahoo!ファイナンス（日本）の信用残ページ https://finance.yahoo.co.jp/quote/<code>.T/margin
+取得元（上から順に試す）:
+  1. 株探（スマホ版）週次信用残 https://s.kabutan.jp/stocks/<code>/historical_margins/weekly/?page=N
+     表「日付(YY/MM/DD) / 終値 / 前週比率 / 信用倍率 / 売り残(株) / 買い残(株) / …」、1ページ30週
+  2. Yahoo!ファイナンス（日本）の信用残ページ https://finance.yahoo.co.jp/quote/<code>.T/margin
   表「日付 / 売り残 / 買い残 / 信用倍率 / 前週比」をそのまま読む（週次・ページにある分（最大約1年）を返す）。
 ページ構成が変わった場合は取得不可として notes に理由を返す（アプリ本体は動く）。
 """
@@ -28,11 +31,73 @@ def _num(x) -> float | None:
         return None
 
 
+def _get(url: str) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def _finish(rows: list[dict], weeks: int, url: str) -> dict:
+    rows = [x for x in rows if x["buy"] is not None or x["sell"] is not None]
+    seen, uniq = set(), []
+    for x in sorted(rows, key=lambda x: x["date"]):
+        if x["date"] not in seen:
+            seen.add(x["date"])
+            uniq.append(x)
+    rows = uniq[-weeks:]
+    for i, x in enumerate(rows):
+        prev = rows[i - 1] if i else None
+        x["buy_chg"] = (x["buy"] - prev["buy"]) if prev and x["buy"] is not None and prev["buy"] is not None else None
+        x["sell_chg"] = (x["sell"] - prev["sell"]) if prev and x["sell"] is not None and prev["sell"] is not None else None
+    if not rows:
+        return {"error": "信用残の行を読めませんでした", "source": url}
+    return {"rows": rows, "source": url}
+
+
+def fetch_kabutan(c: str, weeks: int = 60) -> dict:
+    base = f"https://s.kabutan.jp/stocks/{c}/historical_margins/weekly/"
+    rows: list[dict] = []
+    for page in range(1, (weeks + 29) // 30 + 1):
+        html = _get(base + (f"?page={page}" if page > 1 else ""))
+        got = 0
+        for t in pd.read_html(io.StringIO(html)):
+            cols = [str(x) for x in t.columns]
+            if not any("売り残" in x for x in cols) or not any("買い残" in x for x in cols):
+                continue
+            col = lambda key: next((t.columns[i] for i, x in enumerate(cols) if key in x and "額" not in x), None)
+            dcol, scol, bcol, rcol = col("日付"), col("売り残"), col("買い残"), col("倍率")
+            for _, r in t.iterrows():
+                m = re.search(r"(\d{2,4})/(\d{1,2})/(\d{1,2})", str(r[dcol]))
+                if not m:
+                    continue
+                y = int(m.group(1)); y = y + 2000 if y < 100 else y
+                rows.append({"date": f"{y}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
+                             "sell": _num(r[scol]), "buy": _num(r[bcol]), "ratio": _num(r[rcol]) if rcol is not None else None})
+                got += 1
+        if got < 30:
+            break
+    if not rows:
+        raise RuntimeError("株探の表を読めませんでした")
+    return _finish(rows, weeks, base)
+
+
 def fetch_margin(code: str, weeks: int = 60) -> dict:
     """{'rows': [{'date','sell','buy','ratio','sell_chg','buy_chg'}...], 'source': url} / 失敗時は {'error': ...}。"""
     c = re.sub(r"\.T$", "", code.strip().upper())
     if not re.fullmatch(r"[0-9][0-9A-Z]{3}", c):
         return {"error": "信用残は東証個別銘柄のみ"}
+    errs = []
+    try:
+        return fetch_kabutan(c, weeks)
+    except Exception as e:  # noqa: BLE001
+        errs.append(f"株探: {e}")
+    res = _fetch_yahoo(c, weeks)
+    if "error" in res:
+        res["error"] = " / ".join(errs + ["Yahoo: " + res["error"]])
+    return res
+
+
+def _fetch_yahoo(c: str, weeks: int) -> dict:
     url = f"https://finance.yahoo.co.jp/quote/{c}.T/margin"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ja"})
@@ -74,16 +139,14 @@ def fetch_margin(code: str, weeks: int = 60) -> dict:
         rows.append({"date": date, "sell": _num(r[scol]) if scol is not None else None,
                      "buy": _num(r[bcol]) if bcol is not None else None,
                      "ratio": _num(r[rcol]) if rcol is not None else None})
-    rows = [x for x in rows if x["buy"] is not None or x["sell"] is not None]
-    rows.sort(key=lambda x: x["date"])
-    rows = rows[-weeks:]
-    for i, x in enumerate(rows):
-        prev = rows[i - 1] if i else None
-        x["buy_chg"] = (x["buy"] - prev["buy"]) if prev and x["buy"] is not None and prev["buy"] is not None else None
-        x["sell_chg"] = (x["sell"] - prev["sell"]) if prev and x["sell"] is not None and prev["sell"] is not None else None
-    if not rows:
-        return {"error": "信用残の行を読めませんでした", "source": url}
-    return {"rows": rows, "source": url}
+    # 年のない日付（MM-DD）は直近から遡って年を補う
+    today = pd.Timestamp.today()
+    for x in rows:
+        if re.fullmatch(r"\d{2}-\d{2}", x["date"]):
+            mm = int(x["date"][:2])
+            y = today.year if mm <= today.month else today.year - 1
+            x["date"] = f"{y}-{x['date']}"
+    return _finish(rows, weeks, url)
 
 
 def synthetic_margin(end=None, weeks: int = 30) -> dict:

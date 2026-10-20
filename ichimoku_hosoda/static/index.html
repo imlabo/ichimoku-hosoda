@@ -304,7 +304,8 @@ function drawChart(F){
       const key=w=>w.A[0]+'|'+w.C[0]; const have=new Set(F.waves.map(key));
       const add=j.waves.filter(w=>!have.has(key(w))); F.waves=add.concat(F.waves); SEL_WAVE=0; drawChart(F); drawSide(F);
       st(`起点 ${piv.date} の三波動 ${j.waves.length} 件を追加（先頭に表示）`)}catch(e){st(e.message,true)}});
-  $('#legendnote').textContent='紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／緑の一点鎖線＝AC=CD の日を起点にした基本数値日／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
+  const mgErr=(LY('ly_mg')&&isD&&DATA.margin&&DATA.margin.error)?`【信用残を取得できませんでした：${DATA.margin.error}】 `:'';
+  $('#legendnote').textContent=mgErr+'紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／緑の一点鎖線＝AC=CD の日を起点にした基本数値日／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
 }
 
 // 表示範囲外で同じ位置に寄せた点は、ラベルを1つにまとめる（例: 「A・B←範囲外」）
