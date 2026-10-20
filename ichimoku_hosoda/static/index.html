@@ -29,7 +29,31 @@ label.file input{display:none}
 .tabs button{border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;background:#ecebe5;color:var(--mute);cursor:pointer}
 .tabs button.on{background:#fff;color:var(--ink);font-weight:600}
 main{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(360px,1fr);gap:14px;padding:0 18px 24px}
-@media(max-width:1000px){main{grid-template-columns:1fr}}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{min-width:0}
+#calcbox{overflow-x:auto}
+@media(max-width:700px){
+  body{font-size:13px}
+  header{padding:8px 10px;gap:6px;position:static}
+  header h1{font-size:14px;margin:0;width:100%}
+  header>div:first-of-type{flex:1 1 100%}
+  input#code{width:100%!important;font-size:16px}
+  #status{margin-left:0;width:100%;order:9}
+  .tabs{padding:8px 8px 0;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .tabs button{padding:6px 10px;flex:0 0 auto}
+  #layers{padding:6px 8px 0!important;line-height:2}
+  #layers label{margin-right:6px;white-space:nowrap}
+  #lytoggle{display:inline-block;padding:6px 10px;font-size:13px}
+  #layers:not(.open) #lyopts{display:none}
+  #lyopts{display:block;margin-top:4px}
+  #recalc{display:block;width:100%;margin:6px 0 2px!important;padding:10px!important;font-size:14px!important}
+  #clearabc{width:100%;margin:2px 0!important;padding:8px!important}
+  main{padding:0 6px 18px;gap:8px}
+  .panel{padding:6px;border-radius:0 6px 6px 6px}
+  #side table,#calcbox table{display:block;overflow-x:auto;white-space:nowrap}
+  #side td,#side th{white-space:normal;min-width:64px}
+  .verdict{padding:8px}
+}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:0 8px 8px 8px;padding:12px}
 #chart{height:560px}
 .verdict{background:#fbf7ee;border-left:3px solid var(--acc);padding:10px 12px;border-radius:4px;margin-bottom:12px}
@@ -54,6 +78,7 @@ details summary{cursor:pointer;color:var(--mute)}
 .nb div{border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12.5px;min-width:150px}
 .nb b{font-size:15px}
 #layers label{margin-right:10px;cursor:pointer}
+#lytoggle{display:none}
 tr.lv{cursor:pointer} tr.lv:hover{background:#f6f0fa} tr.lv.sel{background:#efe4f5}
 tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
 .hist span{display:inline-block;margin-right:3px;padding:0 4px;border-radius:3px;font-size:11px}
@@ -74,6 +99,7 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
 </header>
 <div class="tabs" id="tabs"></div>
 <div id="layers" style="display:none;padding:6px 18px 0;font-size:12px;color:var(--mute)">
+  <button id="lytoggle" type="button">表示設定 ▾</button><span id="lyopts">
   表示: <label><input type="checkbox" id="ly_level" checked> 相場水準</label>
   <label><input type="checkbox" id="ly_calc" checked> 計算値</label>
   <label><input type="checkbox" id="ly_cd" checked> 変化日</label>
@@ -82,7 +108,7 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
   <label><input type="checkbox" id="ly_piv" checked> 高値安値ラベル</label>
   <label><input type="checkbox" id="ly_vol" checked> 出来高</label>
   <label><input type="checkbox" id="ly_mg" checked> 信用残</label>
-  　本数: <select id="bars"><option value="120">120</option><option value="200" selected>200</option><option value="320">320</option></select>
+  　本数: <select id="bars"><option value="120">120</option><option value="200" selected>200</option><option value="320">320</option></select></span>
   <button id="recalc" disabled style="margin-left:14px;padding:4px 12px;font-size:12px;border-color:#b03a2e;color:#b03a2e;cursor:pointer">A・B・C で再計算</button>
   <button id="clearabc" style="display:none;padding:4px 10px;font-size:12px;cursor:pointer">手動の A・B・C を解除</button>
   <span id="recalcnote" class="muted"></span>
@@ -148,6 +174,7 @@ function render(){
 let SEL_LEVEL=null;
 ['ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
 const LY=id=>$('#'+id).checked;
+$('#lytoggle').onclick=()=>{const L=$('#layers'); L.classList.toggle('open'); $('#lytoggle').textContent=L.classList.contains('open')?'表示設定 ▴':'表示設定 ▾'};
 
 function drawChart(F){
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
@@ -258,7 +285,7 @@ function drawChart(F){
     ABC.piv=F.pivots.filter(p=>p.rank>=2&&inWin(p.date));
     traces.push({x:ABC.x.slice(),y:ABC.y.slice(),mode:'lines+markers+text',type:'scatter',name:`三波動 A-B-C${selW.manual?'（手動）':''}（起点 ${selW.A[0]}${out[0]?'・表示範囲外':''}）`,
       text:abcLabels(ABC.x,ABC.out),textposition:'middle right',textfont:{size:13,color:col},line:{color:col,width:2,dash:PEND&&PEND.key===ABC.key?'dash':'solid'},
-      customdata:ABC.real.map(rp),marker:{symbol:'circle-open',size:17,color:col,line:{color:col,width:3}},hovertemplate:'%{text} %{x}<br>%{customdata:,.1f}<br>（ドラッグで移動）<extra></extra>'});
+      customdata:ABC.real.map(rp),marker:{symbol:'circle-open',size:TOUCH()?24:17,color:col,line:{color:col,width:TOUCH()?4:3}},hovertemplate:'%{text} %{x}<br>%{customdata:,.1f}<br>（ドラッグで移動）<extra></extra>'});
   }
   // ---- 変化日（上位5件、将来のみ）: 線は下 1/3、ラベルは下端に段差
   if(LY('ly_cd')){
@@ -283,14 +310,14 @@ function drawChart(F){
       ann.push({x:d.date,y:ymax+span*.075,text:`<b>${d.date.slice(5)}</b>`,showarrow:false,font:{size:10,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.9)',xanchor:'center',yanchor:'bottom'});
       ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（${past?`${-d.offset}${u}前・経過`:d.offset===0?'本日':`+${d.offset}${u}`}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
-  $('#chart').style.height=(mg&&VOL)?'720px':(mg||VOL)?'640px':'560px';
+  $('#chart').style.height=NARROW()?((mg&&VOL)?'600px':(mg||VOL)?'520px':'440px'):(mg&&VOL)?'720px':(mg||VOL)?'640px':'560px';
   Plotly.newPlot('chart',traces,{
-    title:{text:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
-    margin:{l:50,r:20,t:40,b:30},xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
+    title:{text:NARROW()?`<b>${DATA.display_name||DATA.name}</b> ${F.label} ${fmt(rp(F.close))}`:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
+    margin:NARROW()?{l:38,r:6,t:34,b:26}:{l:50,r:20,t:40,b:30}, showlegend:!NARROW(), dragmode:TOUCH()?false:'zoom',xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
     ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
     ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
     yaxis:Object.assign({domain:DOM.p,tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
-    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false}).then(gd=>deOverlap(gd));
+    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false,displayModeBar:!TOUCH(),scrollZoom:false}).then(gd=>deOverlap(gd));
   updRecalc(); drawCalcBox(F, selW, ABC&&PEND&&PEND.key===ABC.key?PEND:null);
   const gd=$('#chart'); setupDrag(gd);
   gd.removeAllListeners&&gd.removeAllListeners('plotly_relayout'); gd.on('plotly_relayout',()=>{ if(!DEOV_BUSY) setTimeout(()=>deOverlap(gd),30) });
@@ -341,7 +368,8 @@ async function deOverlap(gd){
     order.forEach(i=>{const cur=anns[i].yshift||0, b=rectOf(els[i]), h=b.bottom-b.top;
       const base={left:b.left,right:b.right,top:b.top+cur,bottom:b.bottom+cur};   // ずらす前の位置
       let best=null;
-      for(let k=0;k<20;k++){const dy=(k%2?1:-1)*Math.ceil(k/2)*(h+pad); const r={...base,top:base.top+dy,bottom:base.bottom+dy}; if(!hit(r)&&(inside(r)||!inside(base))){best=dy;break}}
+      const maxK=annPrio(anns[i].text)<=2?20:7;   // 計算値・D 以外は元の位置から3段まで。それ以上は隠す
+      for(let k=0;k<maxK;k++){const dy=(k%2?1:-1)*Math.ceil(k/2)*(h+pad); const r={...base,top:base.top+dy,bottom:base.bottom+dy}; if(!hit(r)&&(inside(r)||!inside(base))){best=dy;break}}
       const vis=best!==null||annPrio(anns[i].text)<=2;   // 置き場所がなければ優先度の低い注釈は隠す（計算値・D は必ず残す）
       if(best===null) best=0;
       if(vis) placed.push({...base,top:base.top+best,bottom:base.bottom+best});
@@ -374,34 +402,44 @@ function drawCalcBox(F,w,pend){ const el=$('#calcbox'); if(!w){el.innerHTML='';r
     <table><tr><th>種類</th><th>式</th><th class="num">計算値</th><th class="num">現値比</th><th>達成</th></tr>`+
     ['E','N','V','NT'].map(k=>`<tr><td><b style="color:${cc[k]}">${k}</b></td><td class="muted">${form[k]} = ${f(k==='N'||k==='NT'?c:b)} ${sg} ${fmt(Math.abs(k==='V'?b-c:k==='NT'?c-a:b-a))}</td><td class="num"><b>${f(calc[k])}</b></td><td class="num">${((rp(calc[k])/rp(close)-1)*100).toFixed(1)}%</td><td>${rp(calc[k])<=0?'<span class="ng">0 以下（対象外）</span>':pend?'<span class="muted">—</span>':ach[k]?'<span class="ok">達成</span>':'未達'}</td></tr>`).join('')+'</table></div>'}
 function updRecalc(){const on=!!(PEND&&ABC&&PEND.key===ABC.key); $('#recalc').disabled=!on;
-  $('#recalcnote').textContent=on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。上げ／下げは A→B の向きで自動判定':'')}
+  $('#recalcnote').textContent=on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?(TOUCH()?'A・B・C の丸を指で押したまま動かすと ▲▼ に吸着します':'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。上げ／下げは A→B の向きで自動判定'):'')}
+const TOUCH=()=>window.matchMedia('(pointer: coarse)').matches, NARROW=()=>window.innerWidth<=700;
 function setupDrag(gd){
   if(gd._abcDrag) return; gd._abcDrag=true;
-  const rel=e=>{const r=gd.getBoundingClientRect(); return [e.clientX-r.left, e.clientY-r.top]};
-  const hit=e=>{ if(!ABC||!gd._fullLayout||!gd.data[ABC.ti]) return -1; const [mx,my]=rel(e); let best=-1, bd=16;
+  const rel=(x,y)=>{const r=gd.getBoundingClientRect(); return [x-r.left, y-r.top]};
+  const hit=(x,y,rad)=>{ if(!ABC||!gd._fullLayout||!gd.data[ABC.ti]) return -1; const [mx,my]=rel(x,y); let best=-1, bd=rad;
     abcPx(gd).forEach((p,k)=>{const d=Math.hypot(p.px-mx,p.py-my); if(d<bd){bd=d;best=k}}); return best};
   const setCursor=c=>{const el=(gd.querySelector('.draglayer .xy .nsewdrag')||gd.querySelector('.nsewdrag')); if(el) el.style.cursor=c};
-  gd.addEventListener('pointerdown',e=>{const k=hit(e); if(k<0) return;
-    e.preventDefault(); e.stopPropagation(); DRAG={k, moved:false}; setCursor('grabbing')},true);
-  gd.addEventListener('mousedown',e=>{ if(DRAG){e.preventDefault(); e.stopPropagation()} },true);
-  window.addEventListener('pointermove',e=>{
-    if(!DRAG){ if(e.target&&gd.contains(e.target)) setCursor(hit(e)>=0?'grab':''); return }
-    e.preventDefault();
-    // ▲（高値）▼… どちらでも：マウスに画面上で一番近い印に吸着
-    const xa=gd._fullLayout.xaxis, ya=gd._fullLayout.yaxis, [mx,my]=rel(e), k=DRAG.k, cands=ABC.piv;
+  const start=k=>{DRAG={k, moved:false}; setCursor('grabbing'); if(TOUCH()) st(`${'ABC'[k]} をつかみました。指を動かして ▲▼ の位置へ`)};
+  const move=(x,y)=>{
+    // ▲（高値）▼（安値）どちらでも：指・マウスに画面上で一番近い印に吸着
+    const xa=gd._fullLayout.xaxis, ya=gd._fullLayout.yaxis, [mx,my]=rel(x,y), k=DRAG.k, cands=ABC.piv;
     if(!cands.length) return;
     let p=cands[0], bd=1e9; cands.forEach(q=>{const px=xa._offset+xa.l2p(ABC.allDates.indexOf(q.date)), py=ya._offset+ya.l2p(q.price), d=Math.hypot(px-mx,(py-my)*0.6); if(d<bd){bd=d;p=q}});
     if(ABC.full[k]===p.i&&ABC.kind[k]===p.kind&&DRAG.moved) return;
     const kind=p.kind; ABC.kind[k]=kind; ABC.x[k]=p.date; ABC.real[k]=p.price; ABC.y[k]=Math.max(ABC.yl,Math.min(ABC.yh,p.price)); ABC.full[k]=p.i; ABC.out[k]=false; DRAG.moved=true;
-    const lab=['A','B','C'];
     Plotly.update(gd,{x:[ABC.x.slice()],y:[ABC.y.slice()],customdata:[ABC.real.map(ABC.rp)],text:[abcLabels(ABC.x,ABC.out)],'line.dash':'dash'},{'xaxis.type':'category'},[ABC.ti]);
-    st(`${lab[k]} → ${p.date} の${kind==='L'?'安値':'高値'} ${fmt(ABC.rp(p.price))}`)},{passive:false});
-  window.addEventListener('pointerup',()=>{ if(!DRAG) return; const d=DRAG; DRAG=null; setCursor(''); if(!d.moved) return;
+    st(`${'ABC'[k]} → ${p.date} の${kind==='L'?'安値':'高値'} ${fmt(ABC.rp(p.price))}`)};
+  const end=()=>{ if(!DRAG) return; const d=DRAG; DRAG=null; setCursor(''); if(!d.moved){ if(TOUCH()) st('A・B・C の丸を押したまま指を動かしてください'); return }
     PEND={key:ABC.key, x:ABC.x.slice(), full:ABC.full.slice(), real:ABC.real.slice(), out:ABC.out.slice(), kind:ABC.kind.slice()}; updRecalc();
     drawChart(ABC.F);
     const [a,b,c]=ABC.full;
     if(!(a<b&&b<c)) st('A → B → C の順（A が最も古い）に並ぶように置いてください',true);
-    else st('位置を変えました。「A・B・C で再計算」を押すと変化日・計算値・D を引き直します')});
+    else st('位置を変えました。「A・B・C で再計算」を押すと変化日・計算値・D を引き直します')};
+  // マウス・ペン
+  gd.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch') return; const k=hit(e.clientX,e.clientY,16); if(k<0) return;
+    e.preventDefault(); e.stopPropagation(); start(k)},true);
+  gd.addEventListener('mousedown',e=>{ if(DRAG){e.preventDefault(); e.stopPropagation()} },true);
+  window.addEventListener('pointermove',e=>{ if(e.pointerType==='touch') return;
+    if(!DRAG){ if(e.target&&gd.contains(e.target)) setCursor(hit(e.clientX,e.clientY,16)>=0?'grab':''); return }
+    e.preventDefault(); move(e.clientX,e.clientY)},{passive:false});
+  window.addEventListener('pointerup',e=>{ if(e.pointerType!=='touch') end() });
+  // 指（スマホ・タブレット）：丸の近くを触ったときだけ画面のスクロールを止めてドラッグにする
+  gd.addEventListener('touchstart',e=>{ if(e.touches.length!==1) return; const t=e.touches[0], k=hit(t.clientX,t.clientY,34); if(k<0) return;
+    e.preventDefault(); e.stopPropagation(); start(k)},{capture:true,passive:false});
+  gd.addEventListener('touchmove',e=>{ if(!DRAG) return; e.preventDefault(); e.stopPropagation(); const t=e.touches[0]; move(t.clientX,t.clientY)},{capture:true,passive:false});
+  gd.addEventListener('touchend',e=>{ if(DRAG){e.preventDefault(); end()} },{capture:true,passive:false});
+  gd.addEventListener('touchcancel',()=>{ if(DRAG) end() },{capture:true});
 }
 async function recalc(){
   if(!PEND||!ABC||PEND.key!==ABC.key) return;
