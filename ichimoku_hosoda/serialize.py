@@ -54,7 +54,8 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
                    "C": [_d(w.C.date), _f(w.C.price)], "ab": w.ab, "bc": w.bc, "ac": w.ac,
                    "calc": {k: _f(v) for k, v in w.calc.items()}, "achieved": w.achieved,
                    "d_dates": {k: _d(res.index_ext[i]) if i < len(res.index_ext) else None for k, i in w.d_dates.items()},
-                   "d_info": [_dinfo(w, k, i, n, res) for k, i in w.d_dates.items()]}
+                   "d_info": [_dinfo(w, k, i, n, res) for k, i in w.d_dates.items()],
+                   "acd_basic": _acd_basic(w, n, res)}
                   for w in res.waves if "不成立" not in w.note][:16],
         "waveform": res.waveform["form"] if res.waveform else None,
         "p_value": ({"A": [_d(res.p_value["A"].date), _f(res.p_value["A"].price)],
@@ -144,3 +145,18 @@ def clusters_to_json(clusters, n):
     return [{"date": _d(c["date"]), "offset": int(c["i_min"] - (n - 1)), "score": round(c["score"], 1),
              "n": c["n_sources"], "kinds": c["kinds"], "details": [i.detail for i in c["items"][:6]]}
             for c in clusters]
+
+
+def _acd_basic(w, n, res):
+    """AC=CD の日を 1 日目として数えた基本数値日（過去・将来とも）。"""
+    from .numbers import NAMES, basic_numbers
+    j0 = w.d_dates.get("AC=CD")
+    if j0 is None or j0 >= len(res.index_ext):
+        return None
+    out = []
+    for b, cat in basic_numbers(max_n=257).items():
+        j = j0 + b - 1
+        if j >= len(res.index_ext):
+            break
+        out.append({"n": b, "core": cat == "core", "name": NAMES.get(b), "date": _d(res.index_ext[j]), "offset": int(j - (n - 1))})
+    return {"origin": _d(res.index_ext[j0]), "origin_offset": int(j0 - (n - 1)), "days": out}

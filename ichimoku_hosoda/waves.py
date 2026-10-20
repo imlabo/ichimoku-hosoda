@@ -356,3 +356,23 @@ def p_value(pivs: list[Pivot]) -> dict | None:
         return None
     return {"A": A, "B": B, "C": C, "P": C.price + (A.price - B.price),
             "P_down": C.price - (A.price - B.price)}
+
+
+def d_origin_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bars: int, horizon: int,
+                          unit: str = "日", rel: str = "AC=CD", prefix: str = "", mult: float = 1.0) -> list[ChangeDate]:
+    """三波動の終了予測日 D（既定 AC=CD）を起点に、そこからの基本数値日を変化日候補にする（D を 1 本目と数える）。"""
+    from .numbers import NAMES, basic_numbers
+    out = []
+    for w in waves:
+        j0 = w.d_dates.get(rel)
+        if j0 is None or j0 >= len(index_ext):
+            continue
+        for b, cat in basic_numbers().items():
+            j = j0 + b - 1
+            if j >= len(index_ext) or not (n_bars - 3 <= j < n_bars + horizon):
+                continue
+            wt = {"core": 1.0, "sub": 0.6, "plus100": 0.5, "small": 0.3}[cat] * 1.3 * mult
+            out.append(ChangeDate(j, index_ext[j], "dbasic", b, index_ext[j0], "D",
+                                  f"{prefix}{'上げ' if w.direction == 'up' else '下げ'}三波動の {rel}（{index_ext[j0].date()}）から {b}{unit}目"
+                                  f"{'（' + NAMES[b] + '）' if b in NAMES else ''}", wt))
+    return out

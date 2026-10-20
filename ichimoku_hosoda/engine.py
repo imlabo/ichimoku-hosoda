@@ -235,6 +235,8 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
             if n - 3 <= j < n + horizon:
                 rule_cands.append(numbers.ChangeDate(j, index_ext[j], "equal", length, base.date, base.kind,
                     f"【定型】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{base.date.date()} から", 2.0))
+    # 定型三波動の AC=CD の日を起点にした基本数値日
+    rule_cands += waves.d_origin_change_dates(rw, index_ext, n, horizon, unit=unit, prefix="【定型】", mult=1.5)
     cands = (rule_cands + numbers.basic_change_dates(pivs[-10:], index_ext, n, horizon, unit=unit)
              + numbers.equal_change_dates(pivs, index_ext, n, horizon, unit=unit)
              + waves.wave_change_dates(ws, index_ext, n, horizon, unit=unit)
@@ -283,6 +285,7 @@ def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: st
     for c in waves.wave_change_dates([w], index_ext, n, horizon, unit=unit):
         c.detail = c.detail.replace("【定型】", "【手動】")
         cands.append(c)
+    cands += waves.d_origin_change_dates([w], index_ext, n, horizon, unit=unit, prefix="【手動】", mult=1.8)
     # 手動 A 以降の高値・安値の半値水準（A から過去へさかのぼって最初に半値を付けた日を起点）
     half = lv.half_level(df, A.i, n - 1, f"手動 A {A.date.date()} 以降")
     if half is not None:
