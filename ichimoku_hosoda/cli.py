@@ -81,7 +81,7 @@ def _summary(results: dict) -> dict:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="一目均衡表 節目判定（細田哲生理論）")
+    ap = argparse.ArgumentParser(description="一目均衡表 節目判定")
     ap.add_argument("code", help="株式コード（7203 / ^N225 / USDJPY）または名前（--csv 併用時はラベル）")
     ap.add_argument("--csv", help="OHLC CSV を使う（Date,Open,High,Low,Close）")
     ap.add_argument("--period", default="6y", help="yfinance 取得期間（既定 6y）")

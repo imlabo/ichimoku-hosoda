@@ -65,7 +65,7 @@ def plot(res: AnalysisResult, path: str, bars: int = 260, title: str | None = No
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y/%m"))
     ax.grid(alpha=0.25)
     ax.legend(loc="upper left", fontsize=8, ncol=3, framealpha=0.9)
-    ax.set_title(title or f"{res.label}  一目均衡表（細田理論）  終値 {c0:,.1f}", fontsize=12)
+    ax.set_title(title or f"{res.label}  一目均衡表  終値 {c0:,.1f}", fontsize=12)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

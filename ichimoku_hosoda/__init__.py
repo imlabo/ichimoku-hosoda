@@ -1,5 +1,5 @@
 """
-ichimoku_hosoda ― 細田哲生（三世一目山人）理論に基づく一目均衡表 節目判定エンジン
+ichimoku_hosoda ― 一目均衡表 節目判定エンジン
 
 理論の根拠は同梱の ichimoku_hosoda_theory.md を参照。
 一般に流布する「雲・三役好転」中心の解釈ではなく、

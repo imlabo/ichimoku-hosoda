@@ -1,6 +1,6 @@
 """三波動構成（時間関係・計算値）と波形分類。
 
-定型（細田）: A→B 第一波動、B→C 第二波動（押し/戻り）、C→D 第三波動
+定型: A→B 第一波動、B→C 第二波動（押し/戻り）、C→D 第三波動
   ① 時間: AB=BD, AB=CD, AC=CD      ② A〜D が基本数値      ③ D が計算値を達成
 計算値（上げ）: E = B+(B−A), N = C+(B−A), V = B+(B−C), NT = C+(C−A)
   E 達成 → 方向持続しやすい／N・V は BC 半値・B を中心とするもみ合いの範疇（警戒）／NT は限界
@@ -40,7 +40,7 @@ class Wave3:
 def _origin_candidates(pivs: list[Pivot], ci: int, max_back: int, start: int, majors: list[int], ext: dict) -> list[int]:
     """C（pivs[ci]）に対する起点 A の候補 index。
     ① 直近の同種の極（max_back 個）  ② 評価範囲内の重要な極（rank>=3、直近 12 個まで）
-    ③ 評価範囲内の最安値／最高値の極  — 細田：起点と中心点を変えつつ複数の三波動を確認する。"""
+    ③ 評価範囲内の最安値／最高値の極  — 起点と中心点を変えつつ複数の三波動を確認する。"""
     C = pivs[ci]
     cand = set()
     for ai in range(ci - 2, max(-1, ci - 2 - 2 * max_back), -2):

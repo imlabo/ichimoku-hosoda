@@ -1,7 +1,7 @@
 """基本数値・対等数値・変化日の生成。
 
 基本数値：9 と 26 を絶対数とし、その組み合わせ（接点重複は −1/−2）。
-細田が併せて重視: 47, 67, 13, 37, 55, 21, 小基本数値 3・5・7, 100+基本数値,
+併せて重視: 47, 67, 13, 37, 55, 21, 小基本数値 3・5・7, 100+基本数値,
 一環 226 のほか経験上 247・257、一巡環 676。
 数え方：起点日を 1 日目とする（起点日を含む営業日数）。
 """
@@ -20,7 +20,7 @@ NAMES = {9: "一節", 26: "一期", 76: "一巡", 226: "一環", 676: "一巡環
 
 
 def basic_numbers(max_n: int = 700, include_small: bool = False) -> dict[int, str]:
-    """{数値: 区分} を返す。core=原著の基本数値, sub=細田が重視, plus100=100+基本数値。"""
+    """{数値: 区分} を返す。core=原著の基本数値, sub=併せて重視, plus100=100+基本数値。"""
     d: dict[int, str] = {}
     for n in CORE:
         d[n] = "core"
@@ -35,7 +35,7 @@ def basic_numbers(max_n: int = 700, include_small: bool = False) -> dict[int, st
 
 
 def tolerance(n: int) -> int:
-    """細田：9 なら 7〜11、17 なら 13〜21 と幅を持たせる。ここでは控えめに ±1（〜50）、±2（〜150）、±3。"""
+    """9 なら 7〜11、17 なら 13〜21 と幅を持たせる。ここでは控えめに ±1（〜50）、±2（〜150）、±3。"""
     return 1 if n <= 50 else 2 if n <= 150 else 3
 
 
@@ -104,7 +104,7 @@ def equal_change_dates(pivs, index_ext: pd.DatetimeIndex, n_bars: int, horizon: 
 
 def cluster_dates(cands: list[ChangeDate]) -> list[dict]:
     """同じ日の候補をまとめ、重なり度（スコア）で並べる。隣接日（±1）は
-    連鎖させず、スコアの 1/2 を参考加点するだけにとどめる（細田：1 日違いで重なる日を重要視）。"""
+    連鎖させず、スコアの 1/2 を参考加点するだけにとどめる（1 日違いで重なる日を重要視）。"""
     by_i: dict[int, list[ChangeDate]] = {}
     for c in cands:
         by_i.setdefault(c.i, []).append(c)

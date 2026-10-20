@@ -21,7 +21,7 @@ from . import waves as wavemod
 
 _results: dict[tuple, dict] = {}   # (code, period) -> {frame_key: AnalysisResult}
 
-app = FastAPI(title="一目均衡表 節目判定（細田哲生理論）")
+app = FastAPI(title="一目均衡表 節目判定")
 _cache: dict[tuple, tuple[float, dict]] = {}
 CACHE_SEC = 900
 

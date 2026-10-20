@@ -42,7 +42,7 @@ class AnalysisResult:
                f"- 並び順: {pos.order}",
                f"- 転換線 vs 基準線: {_jp(pos.tenkan_vs_kijun)}／基準線の向き: {_jp(pos.kijun_slope)}／"
                f"遅行スパン vs 実線: {_jp(pos.chikou_vs_price)}／実線 vs 先行スパン帯: {_jp(pos.price_vs_cloud)}",
-               f"- 三役: **{pos.sanyaku}**（※細田：三役好転・悪化は売買サインではなく「26 のスパンでのもみ合い放れ＋下げ（上げ）の影響力脱却」の示唆）"]
+               f"- 三役: **{pos.sanyaku}**（※三役好転・悪化は売買サインではなく「26 のスパンでのもみ合い放れ＋下げ（上げ）の影響力脱却」の示唆）"]
         i = last
         md.append(f"- 現在値: 転換線 {self.L.loc[i,'tenkan']:,.1f} / 基準線 {self.L.loc[i,'kijun']:,.1f} / "
                   f"先行(基準転換) {self.L.loc[i,'span_tk']:,.1f} / 先行(52) {self.L.loc[i,'span_52']:,.1f}")
@@ -136,7 +136,7 @@ class AnalysisResult:
 
 
     def verdict(self) -> list[str]:
-        """細田の思考順序に沿った暫定判断：①動くか動かないか ②上げか下げか ③次に確認すべき節目。"""
+        """思考順序に沿った暫定判断：①動くか動かないか ②上げか下げか ③次に確認すべき節目。"""
         pos, df, u = self.position, self.df, self.unit
         c = float(df["Close"].iloc[-1])
         n = len(df)
@@ -217,7 +217,7 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     calc = waves.calc_levels(ws, float(df["Close"].iloc[-1]))
     # 半値水準の期間には定型三波動の A〜現在も加える
     lvs = lv.find_levels(df, L, pivs, ranges=[(w.A.i, n - 1, f"定型三波動 A {w.A.date.date()} 以降") for w in rw])
-    # 定型三波動の A・B・C からの基本数値／対等数値（細田：重要な高値・安値からの基本数値・対等数値で変化日を定める）
+    # 定型三波動の A・B・C からの基本数値／対等数値（重要な高値・安値からの基本数値・対等数値で変化日を定める）
     rule_pts, seen_pt = [], set()
     for w in rw:
         for p in (w.A, w.B, w.C):
