@@ -27,6 +27,7 @@ class AnalysisResult:
     index_ext: pd.DatetimeIndex
     unit: str = "日"
     extra_lag: int | None = None   # チャートに追加表示する遅行スパンの本数（日足 3、週足 9）
+    checks: dict | None = None     # 思考の手順に沿った確認（過去の変化日の結果・検証条件・準備構成・三役の内訳）
 
     # ---------- 出力 ----------
     def to_markdown(self, max_dates: int = 12, max_levels: int = 8, max_calc: int = 10) -> str:
@@ -243,7 +244,17 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
              + lv.level_change_dates(lvs, index_ext, n, horizon, unit=unit))
     clusters = numbers.cluster_dates(cands)
     nbs = [nbars.summarize(df, k, lab) for k, lab in nbar_specs]
-    return AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit, extra_lag)
+    res = AnalysisResult(label, df, L, pivs, pos, events, ws, wf, pv, calc, lvs, clusters, nbs, horizon, index_ext, unit, extra_lag)
+    try:
+        from . import checks as ck
+        proj = ck.projected_lines(df, max(horizon, 30))
+        prep = ck.prep_check(df, pivs)
+        res.checks = {"past": ck.past_change_results(df, pivs, ws, lvs, index_ext, unit),
+                      "proj": proj, "prep": prep, "sanyaku": ck.sanyaku_detail(df, L),
+                      "cond": ck.conditions(res, proj, prep)}
+    except Exception as e:  # noqa: BLE001
+        res.checks = {"error": str(e)}
+    return res
 
 
 def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: str | None = None,

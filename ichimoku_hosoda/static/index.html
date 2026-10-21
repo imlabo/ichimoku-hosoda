@@ -509,6 +509,16 @@ function drawSide(F){
   let h='';
   if(F.inverted) h+=`<div class="verdict" style="background:#eef3f8;border-left-color:#1f5f8b"><b>上下反転チャート</b>：${F.inverted.note}。基準 ${fmt(F.inverted.ref)}。下げ相場を上げ相場として読み直すことで、戻りの限界・下げ三波動の終了予測日・下げ側の計算値を、上げ相場と同じ型で確認できます。</div>`;
   h+=`<div class="verdict"><strong>総合所見（暫定判断と検証条件）</strong><ul>${F.verdict.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
+  const CK=F.checks;
+  if(CK&&!CK.error){
+    if(CK.cond&&CK.cond.length) h+=`<div class="verdict" style="background:#eef6f3;border-left-color:#0e7c86"><strong>次の変化日までの検証条件</strong><div class="muted" style="margin:2px 0 4px">「いつまでに・いくら以上（以下）なら前提どおり、割れ（超え）れば前提が誤り」を先に決めておく。転換線・基準線は値動きがなければ何円になるかが先に分かる。</div><ul>${CK.cond.map(v=>'<li>'+md(v)+'</li>').join('')}</ul></div>`;
+    const sy=CK.sanyaku||{}, sg=x=>x?(x.sign>0?'<span class="ok">好転</span>':x.sign<0?'<span class="ng">悪化</span>':'中立'):'-';
+    h+=`<div class="muted" style="margin:4px 0">三役の内訳：①転換線×基準線 ${sg(sy.tk_kj)}（${sy.tk_kj?sy.tk_kj.bars:'-'}${u}）・②遅行スパン×実線 ${sg(sy.chikou)}（${sy.chikou?sy.chikou.bars:'-'}${u}）＝26 のスパンでのもみ合い放れ ／ ③実線×先行スパン ${sg(sy.cloud)}（${sy.cloud?sy.cloud.bars:'-'}${u}）＝下げ（上げ）の影響力を脱したか。出口は三役悪化ではなく三波動の完成点。</div>`;
+    if(CK.past&&CK.past.length){
+      h+=`<h2>過ぎた変化日の結果（反応の有無）</h2><div class="muted" style="margin-bottom:6px">変化日は当てる日ではなく、その日の反応を確かめる日。高値・安値になれば転換の可能性、反応がなければその方向の動きが強い（延長・加速）。</div><table><tr><th>日付</th><th class="num">${u}</th><th class="num">スコア</th><th>反応</th><th>主な根拠</th></tr>`+
+        CK.past.slice().reverse().map(x=>{const r=x.reaction, rt=r.kind==='high'?`<b class="ng">高値</b> ${fmt(r.price)}`:r.kind==='low'?`<b class="ok">安値</b> ${fmt(r.price)}`:`反応なし（${r.move==='up'?'上昇継続':'下落継続'}）`;
+          return `<tr><td class="num">${x.date}</td><td class="num">${x.offset}</td><td class="num">${x.score}</td><td>${rt}</td><td class="muted">${x.details.slice(0,2).join('<br>')}</td></tr>`}).join('')+'</table>'}
+  }
   h+=`<div class="muted">並び順: ${F.position.order}　／　直近波形: <b>${F.waveform||'-'}</b>　／　三役: ${F.position.sanyaku}</div>`;
   if(F.extra_lag&&F.extra_lag.state&&F.extra_lag.state.rel){const e=F.extra_lag.state, rel={up:'上（好転）',down:'下（悪化）',touch:'実線に触れている'}[e.rel];
     h+=`<div class="muted" style="margin-top:4px">遅行スパン(${F.extra_lag.n}): ${e.ref_date} の実線（${fmt(e.ref_low)}〜${fmt(e.ref_high)}）に対して <b>${rel}</b>　／　${e.run_sign}${e.run}連（${F.extra_lag.n}${u}足相当）</div>`}
@@ -534,12 +544,13 @@ function drawSide(F){
         (up?`上の水準 ${fmt(up.price)}（+${up.pct}%）`:'上に水準なし')+'、'+(dn?`下の水準 ${fmt(dn.price)}（${dn.pct}%）`:'下に水準なし')+'。'+
         (act.length?`<br><b>相場水準として機能中:</b> ${act.map(l=>fmt(l.price)).join('、')}（直近26${u}で繰り返しまたいでいる＝この値段を軸にしたもみ合い。放れはここから出発しやすい）`:`<br>直近26${u}で繰り返しまたいでいる水準はなく、価格は水準から離れて動いている（押し戻りとして各線が機能しているかを見る局面）`)+'</div>'})()+
     F.levels.slice(0,6).map((l,i)=>{const rel=l.rel==='above'?`現値はこの水準の <b>上</b>（+${l.pct}%）`:`現値はこの水準の <b>下</b>（${l.pct}%）`;
+      const brk=l.break==='up'?`<div><b class="ok">もみ合い上限 ${fmt(l.upper)} を上抜け</b>＝もみ合いの上放れ（水準自体の上昇）</div>`:l.break==='down'?`<div><b class="ng">もみ合い下限 ${fmt(l.lower)} を割り込み</b>＝もみ合いの下放れ（水準自体の下落）</div>`:'';
       const func=l.touch26>=6?`直近26${u}で${l.touch26}回またいでいる → 押し戻りとしてではなく<b>相場水準として機能中</b>`:l.touch26>0?`直近26${u}で${l.touch26}回接触`:`直近26${u}は接触なし（離れている）`;
       const hits=l.hits.map(h=>`<span class="tag">${h.n}${u}目 ${h.what}</span>`).join(' ')||'<span class="muted">—</span>';
       const nxt=l.next_basic.map(x=>`${x.n}${u}目 ${x.date||'-'}（+${x.ahead}${u}）`).join('、');
       return `<table class="lvt" style="margin-bottom:10px"><tr class="lv${SEL_LEVEL===l.price?' sel':''}" data-p="${l.price}"><td style="width:28%"><div style="font-size:16px"><b>${l.kind==='half'?'半値':'水準'}${i+1}　${fmt(l.price)}</b></div>${l.kind==='half'?'<span class="tag" style="background:#7d3c98;color:#fff">期間の半値</span>':''}<div class="muted">${rel}</div><div class="muted">スコア ${l.score}</div></td>
         <td><div><b>根拠:</b> ${l.sources.join(' ／ ')}</div><div><b>起点:</b> ${l.origin}（${l.elapsed}${u}経過）${l.kind==='half'?`＝ ${l.range.from}〜${l.range.to} の高値 ${fmt(l.range.hi)}・安値 ${fmt(l.range.lo)} の半値を、期間の始まりから<b>過去へさかのぼって最初に付けた日</b>（資料の図の A）`:''}</div><div><b>基本数値日の現れ方:</b> ${hits}</div><div><b>次の基本数値日:</b> ${nxt||'—'}</div>
-        <div><b>もみ合い限界:</b> 上 ${fmt(l.upper)}（= ${fmt(l.price)}×2 − 安値 ${fmt(l.lo_since)}） ／ 下 ${fmt(l.lower)}（= ${fmt(l.price)}×2 − 高値 ${fmt(l.hi_since)}）</div><div class="muted">${func}</div></td></tr></table>`}).join('');
+        <div><b>もみ合い限界:</b> 上 ${fmt(l.upper)}（= ${fmt(l.price)}×2 − 安値 ${fmt(l.lo_since)}） ／ 下 ${fmt(l.lower)}（= ${fmt(l.price)}×2 − 高値 ${fmt(l.hi_since)}）</div><div class="muted">${func}</div>${brk}</td></tr></table>`}).join('');
   h+=`<h2>計算値（三波動ごと・式つき）</h2><div class="muted" style="margin-bottom:6px">E 達成＝上げ（下げ）の勢い優勢で方向持続しやすい／N・V 達成止まり＝BC の半値・B を中心とするもみ合いの範疇で警戒／NT＝限界。計算値は達成するか未確定、変化日は必ず来る。</div>`+
     [F.waves[SEL_WAVE]].concat(F.waves.filter((_,i)=>i!==SEL_WAVE)).filter(Boolean).slice(0,4).map(w=>{const [a,b,c]=[w.A[1],w.B[1],w.C[1]], u=w.dir==='up', sg=u?'+':'−', ab=Math.abs(b-a), bc=Math.abs(c-b), ac=Math.abs(c-a);
       const row=(k,f,v)=>`<tr><td><span class="tag ${k}">${k}</span></td><td class="muted">${f}</td><td class="num"><b>${fmt(v)}</b></td><td>${w.achieved[k]?'<span class="ok">達成</span>':`<span class="muted">${((v/F.close-1)*100).toFixed(1)}%</span>`}</td></tr>`;

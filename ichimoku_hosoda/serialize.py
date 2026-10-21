@@ -70,6 +70,7 @@ def result_to_json(res: AnalysisResult, bars: int = 300) -> dict:
                    "thresholds": [{"ahead": t["bars_ahead"], "open": _f(t["ref_open"])} for t in s["future_thresholds"][:8]]}
                   for s in res.nbar_summaries],
         "markdown": res.to_markdown(),
+        "checks": _checks(res, n),
     }
     for col in ("tenkan", "kijun", "span_tk", "span_52", "chikou"):
         out["lines"][col] = [_f(v) for v in L[col]]
@@ -129,6 +130,7 @@ def _level(l, res, n):
             "hi_since": hi_since, "lo_since": lo_since,
             "rel": "above" if c > l.price else "below", "pct": round((c / l.price - 1) * 100, 2),
             "touch26": cross,
+            "break": ("up" if c > l.upper_limit else "down" if c < l.lower_limit else None),
             "next_basic": [{"n": b, "date": _d(res.index_ext[l.origin_i + b - 1]) if l.origin_i + b - 1 < len(res.index_ext) else None,
                             "ahead": l.origin_i + b - 1 - (n - 1)} for b in nxt],
             "hits": [{"n": h["n"], "date": _d(h["date"]), "what": h["what"]} for h in l.hits[:10]]}
@@ -160,3 +162,28 @@ def _acd_basic(w, n, res):
             break
         out.append({"n": b, "core": cat == "core", "name": NAMES.get(b), "date": _d(res.index_ext[j]), "offset": int(j - (n - 1))})
     return {"origin": _d(res.index_ext[j0]), "origin_offset": int(j0 - (n - 1)), "days": out}
+
+
+def _checks(res, n):
+    c = res.checks or {}
+    if not c or c.get("error"):
+        return {"error": c.get("error")} if c else None
+    past = [{"date": _d(x["date"]), "offset": int(x["i"] - (n - 1)), "score": round(x["score"], 1),
+             "reaction": {k: (_f(v) if isinstance(v, (float, np.floating)) else v) for k, v in x["reaction"].items() if k != "i"},
+             "details": x["details"]} for x in c.get("past", [])]
+    pr = c.get("prep")
+    prep = None
+    if pr:
+        prep = {"side": pr["side"], "date": _d(pr["date"]), "price": _f(pr["price"]), "elapsed": pr["elapsed"],
+                "status": pr["status"], "passed": pr["passed"], "next": pr["next"],
+                "broke": ({"date": _d(pr["broke"]["date"]), "n": int(pr["broke"]["n"])} if pr.get("broke") else None)}
+    sy = c.get("sanyaku") or {}
+    proj = c.get("proj")
+    pj = []
+    if proj is not None:
+        for k, row in proj.iloc[:30].iterrows():
+            j = n - 1 + int(k)
+            if j < len(res.index_ext):
+                pj.append({"date": _d(res.index_ext[j]), "ahead": int(k), "tenkan": _f(row["tenkan"]), "kijun": _f(row["kijun"])})
+    return {"past": past, "prep": prep, "cond": c.get("cond", []),
+            "sanyaku": {k: {"sign": int(v[0]), "bars": int(v[1])} for k, v in sy.items()}, "proj": pj}
