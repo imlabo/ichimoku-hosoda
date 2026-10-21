@@ -6,6 +6,7 @@ CSV アップロードにも対応。
 from __future__ import annotations
 
 import io
+import re
 import time
 from pathlib import Path
 
@@ -93,6 +94,16 @@ def index():
     return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/guide", response_class=HTMLResponse)
+def guide():
+    return (Path(__file__).parent / "static" / "guide.html").read_text(encoding="utf-8")
+
+
+@app.get("/static/i18n.js")
+def i18n_js():
+    return FileResponse(Path(__file__).parent / "static" / "i18n.js", media_type="application/javascript")
+
+
 @app.get("/static/plotly.min.js")
 def plotly_js():
     """plotly パッケージ同梱の JS を配信（オフラインでも動く）。"""
@@ -111,8 +122,14 @@ def _warm():
 
 
 @app.get("/api/analyze")
-def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int = 1):
+def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int = 1, market: str = "auto"):
     raw_code = code
+    c0 = code.strip()
+    m = re.fullmatch(r"(?i)vn[:：]\s*([A-Za-z0-9]{1,10})", c0)
+    if m:
+        code = m.group(1).upper() + ".VN"
+    elif market == "vn" and re.fullmatch(r"[A-Za-z0-9]{1,10}", c0) and not re.fullmatch(r"[0-9][0-9A-Za-z]{3}", c0) and c0.upper() != "DEMO":
+        code = c0.upper() + (".VN" if c0.upper() not in ("VNINDEX",) else "")
     code, disp = names.resolve(code)
     key = (code.strip().upper(), period, horizon, intraday)
     hit = _cache.get(key)
@@ -145,7 +162,10 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     if "daily" not in res["frames"]:
         raise HTTPException(500, "日足の分析に失敗しました: " + " / ".join(_ERRORS))
     _results[(key[0], period)] = dict(_LAST)
-    res["margin"] = margin.synthetic_margin(end=full.index[-1]) if demo else margin.fetch_margin(code)
+    res["market"] = "demo" if demo else data.market_of(data.normalize_symbol(code))
+    res["api_code"] = code     # 以降の再計算などでサーバーに渡すコード
+    res["margin"] = (margin.synthetic_margin(end=full.index[-1]) if demo else
+                     margin.fetch_margin(code) if res["market"] == "jp" else {"skip": True})
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 

@@ -20,6 +20,13 @@ pinned: false
 
 を Markdown レポート・JSON・PNG チャートで出力します。理論の根拠は `ichimoku_hosoda_theory.md` を参照。
 
+## 対応市場・言語
+
+- 日本株（7203・285A など）、米国株（AAPL・BRK.B など）、ベトナム株（FPT・VN:FPT・FPT.VN、市場「ベトナム株」を選べば FPT だけでも可）、指数（日経平均・^GSPC・VNINDEX）、為替
+- データ: yfinance を第一に、日本・米国は stooq、ベトナムは VNDirect 公開 API を予備に使用。信用残は日本株のみ（株探の週次 → Yahoo）
+- 画面は 日本語 / English / Tiếng Việt を切り替え可能（`static/i18n.js` の辞書で置き換え）
+- 一目均衡表の解説ページ: `/guide`（3 か国語）
+
 ## インストール
 
 ```bash

@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一目均衡表の解説</title>
+<style>
+:root{--bg:#f6f5f1;--panel:#fff;--ink:#1f2328;--mute:#6b7280;--line:#e5e2da;--acc:#8a5a1e;--up:#c0392b;--dn:#1f5f8b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic",system-ui,sans-serif;font-size:15px;line-height:1.8}
+header{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;font-weight:600;flex:1 1 auto}
+header a{color:var(--acc);font-size:13px}
+header select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+main{max-width:860px;margin:0 auto;padding:18px 16px 60px}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 16px;margin-bottom:18px}
+nav.toc ol{margin:4px 0;padding-left:20px}
+nav.toc a{color:var(--ink)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 20px 14px;margin-bottom:16px}
+h2{font-size:18px;color:var(--acc);margin:14px 0 6px}
+h3{font-size:15px;margin:12px 0 4px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:6px 0}
+td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--mute);font-weight:500}
+code{background:#f1efe8;padding:0 5px;border-radius:3px;font-size:13px}
+.note{background:#fbf7ee;border-left:3px solid var(--acc);padding:8px 12px;border-radius:4px;margin:8px 0;font-size:14px}
+figure{margin:10px 0;text-align:center}
+figure svg{max-width:100%;height:auto}
+figcaption{font-size:12.5px;color:var(--mute)}
+[data-l]{display:none}
+html[lang=ja] [data-l=ja],html[lang=en] [data-l=en],html[lang=vi] [data-l=vi]{display:block}
+html[lang=ja] span[data-l=ja],html[lang=en] span[data-l=en],html[lang=vi] span[data-l=vi]{display:inline}
+@media(max-width:600px){body{font-size:14px}section{padding:4px 12px 10px}header{padding:8px 10px}}
+</style>
+</head>
+<body>
+<header>
+  <h1><span data-l="ja">一目均衡表の解説</span><span data-l="en">Ichimoku Kinko Hyo — A Guide</span><span data-l="vi">Hướng dẫn Ichimoku Kinko Hyo</span></h1>
+  <a href="/" id="back"><span data-l="ja">← 節目判定ツールへ</span><span data-l="en">← Back to the tool</span><span data-l="vi">← Về công cụ</span></a>
+  <select id="lang"><option value="ja">日本語</option><option value="en">English</option><option value="vi">Tiếng Việt</option></select>
+</header>
+<main>
+
+<!-- 共通の図 -->
+<template id="fig-n">
+<svg viewBox="0 0 560 310" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,sans-serif" font-size="12">
+  <!-- A=260 B=150 C=200 → E=40 N=90 V=100 NT=140（y 座標、上ほど高い） -->
+  <line x1="250" y1="40" x2="520" y2="40" stroke="#c0392b" stroke-width="1.5"/><text x="524" y="44" fill="#c0392b">E</text>
+  <line x1="250" y1="90" x2="520" y2="90" stroke="#1f5f8b" stroke-width="1.5"/><text x="524" y="94" fill="#1f5f8b">N</text>
+  <line x1="250" y1="100" x2="520" y2="100" stroke="#7d3c98" stroke-width="1.5"/><text x="524" y="112" fill="#7d3c98">V</text>
+  <line x1="250" y1="140" x2="520" y2="140" stroke="#2e7d32" stroke-width="1.5"/><text x="524" y="144" fill="#2e7d32">NT</text>
+  <polyline points="40,260 150,150 230,200 400,90" fill="none" stroke="#8a5a1e" stroke-width="3"/>
+  <polyline points="400,90 460,120" fill="none" stroke="#8a5a1e" stroke-width="2" stroke-dasharray="5 4"/>
+  <circle cx="40" cy="260" r="5" fill="#8a5a1e"/><text x="28" y="278">A</text>
+  <circle cx="150" cy="150" r="5" fill="#8a5a1e"/><text x="140" y="140">B</text>
+  <circle cx="230" cy="200" r="5" fill="#8a5a1e"/><text x="226" y="220">C</text>
+  <circle cx="400" cy="90" r="5" fill="#0e7c86"/><text x="392" y="80" fill="#0e7c86">D</text>
+  <line x1="400" y1="20" x2="400" y2="285" stroke="#0e7c86" stroke-dasharray="3 3"/>
+  <line x1="40" y1="290" x2="150" y2="290" stroke="#555"/><text x="85" y="304">AB</text>
+  <line x1="150" y1="296" x2="230" y2="296" stroke="#999"/><text x="180" y="308">BC</text>
+  <line x1="230" y1="290" x2="400" y2="290" stroke="#0e7c86"/><text x="290" y="304" fill="#0e7c86">CD (= AB / AC)</text>
+</svg>
+</template>
+
+<!-- ===================== 日本語 ===================== -->
+<div data-l="ja">
+<nav class="toc"><b>目次</b><ol>
+<li><a href="#ja1">一目均衡表とは</a></li><li><a href="#ja2">5本の線</a></li><li><a href="#ja3">時間論：基本数値・対等数値・変化日</a></li>
+<li><a href="#ja4">波動論：I・V・N 波動と中間波動</a></li><li><a href="#ja5">値幅観測論：E・N・V・NT 計算値</a></li>
+<li><a href="#ja6">三波動構成と終了予測日 D</a></li><li><a href="#ja7">相場水準</a></li><li><a href="#ja8">基本数値足（3日足・9週足）</a></li>
+<li><a href="#ja9">このツールの使い方</a></li></ol></nav>
+
+<section id="ja1"><h2>1. 一目均衡表とは</h2>
+<p>一目均衡表は、相場を「時間」「波動」「値幅」の三つの面から見る分析法です。チャートに引く線は、ある期間の<b>高値と安値の半値</b>をつないだもので、売り方と買い方の力が釣り合う値段（均衡）を表します。</p>
+<p>大切なのは、線の交差を売買サインとして機械的に使うことではなく、「相場が動くか動かないか」「上げか下げか」「いつ・いくらまで動きそうか」を順に考えることです。</p>
+<div class="note">最も重視されるのは<b>時間</b>です。値段の目標は届くかどうか分かりませんが、変化日（時間の節目）は必ず来ます。</div>
+</section>
+
+<section id="ja2"><h2>2. 5本の線</h2>
+<table><tr><th>線</th><th>計算</th><th>見方</th></tr>
+<tr><td>転換線</td><td>過去9本の（最高値＋最安値）÷2</td><td>短期の均衡。押し目・戻りの最初の目安</td></tr>
+<tr><td>基準線</td><td>過去26本の（最高値＋最安値）÷2</td><td>中期の均衡。向きが相場の方向を表す</td></tr>
+<tr><td>先行スパン1</td><td>（転換線＋基準線）÷2 を26本先に</td><td>2本の先行スパンの間が「雲」。支え・抵抗になりやすい</td></tr>
+<tr><td>先行スパン2</td><td>過去52本の（最高値＋最安値）÷2 を26本先に</td><td>長期の均衡</td></tr>
+<tr><td>遅行スパン</td><td>当日の終値を26本前に</td><td>今の値段と26本前の値段の比較。実線と交わる所は節目になりやすい</td></tr></table>
+<p>「三役好転」（転換線＞基準線、実線＞雲、遅行スパン＞実線）は買いサインではなく、26本の期間でのもみ合いを抜け、前の下げの影響から脱したことを示すものとして読みます。このツールでは日足で<b>遅行スパン(3)</b>、週足で<b>遅行スパン(9)</b>も表示します。</p>
+</section>
+
+<section id="ja3"><h2>3. 時間論：基本数値・対等数値・変化日</h2>
+<p><b>基本数値</b>は、相場の転換が起きやすい日数（足の本数）です。起点となる足を1本目と数えます。</p>
+<table><tr><th>基本数値</th><th>呼び名など</th></tr>
+<tr><td>9</td><td>一節</td></tr><tr><td>17</td><td>二節</td></tr><tr><td>26</td><td>一期</td></tr>
+<tr><td>33・42・51・65</td><td>9 と 26 の組み合わせ（重なる端を1本引く）</td></tr>
+<tr><td>76</td><td>一巡</td></tr><tr><td>129・172・200・226・257…</td><td>226 は一環</td></tr></table>
+<p><b>対等数値</b>は、過去の動きにかかった日数と同じ日数をくり返すものです。例えば上げに21日かかったなら、次の動きも21日目に注目します。</p>
+<p><b>変化日</b>は、重要な高値・安値からの基本数値や対等数値が重なる日です。「その日に必ず転換する」のではなく、<b>その日に反応（高値・安値）があるか、反応なく続くか</b>を確かめる日です。反応がなければ、その方向の動きが強いと判断します。</p>
+</section>
+
+<section id="ja4"><h2>4. 波動論：I・V・N 波動と中間波動</h2>
+<p>相場の動きは、一方向の <b>I 波動</b>、上げて下げる（下げて上げる）<b>V 波動</b>、上げ・押し・上げの <b>N 波動</b>の組み合わせです。基本は N 波動で、高値と安値を切り上げる N なら上げ相場、切り下げる N なら下げ相場です。</p>
+<p>はっきりしない形は<b>中間波動</b>と呼び、もみ合いとして扱います。</p>
+<ul><li><b>P 波動</b>：高値は切り下げ、安値は切り上げ（内はらみ）。上か下へ放れる準備</li>
+<li><b>Y 波動</b>：高値は切り上げ、安値は切り下げ（外はらみ）</li>
+<li><b>S 波動</b>：前の高値（安値）で支えられる・抑えられる形</li></ul>
+</section>
+
+<section id="ja5"><h2>5. 値幅観測論：E・N・V・NT 計算値</h2>
+<p>上げの N 波動 A（安値）→ B（高値）→ C（押し安値）から、次の上げの目標値を計算します（下げは符号を逆にします）。</p>
+<table><tr><th>名前</th><th>式（上げの場合）</th><th>意味</th></tr>
+<tr><td>E 計算値</td><td>B ＋（B − A）</td><td>最初の上げ幅を B から倍返し。達成すれば勢いが強い</td></tr>
+<tr><td>N 計算値</td><td>C ＋（B − A）</td><td>最初の上げ幅を C から。最も基本的な目標</td></tr>
+<tr><td>V 計算値</td><td>B ＋（B − C）</td><td>押しの幅を B から跳ね返す</td></tr>
+<tr><td>NT 計算値</td><td>C ＋（C − A）</td><td>押し安値の切り上げ幅。控えめな目標</td></tr></table>
+<p>E を達成すれば上げの勢いが優勢で方向が続きやすく、N・V で止まれば B を中心とするもみ合いの範囲かもしれない、と考えます。もみ合いが内はらみ（P 波動）になったときは <b>P 計算値</b>＝C ±（A − B）で放れの目安を出します。</p>
+<figure><svg data-fig="n"></svg><figcaption>A → B → C の三波動と、時間（AB・BC・CD）と値幅（N・E・NT）の関係</figcaption></figure>
+</section>
+
+<section id="ja6"><h2>6. 三波動構成と終了予測日 D</h2>
+<p>A→B を第一波動、B→C を第二波動、C→D を第三波動とします。第一・第二波動が決まると、第三波動がいつ終わりそうかを時間で先に見積もれます。</p>
+<table><tr><th>関係</th><th>意味</th></tr>
+<tr><td>AB = BD</td><td>B から AB と同じ日数</td></tr>
+<tr><td>AB = CD</td><td>C から AB と同じ日数</td></tr>
+<tr><td>AC = CD</td><td>C から AC と同じ日数</td></tr></table>
+<p>A から D までの日数が基本数値（例：76、129）になる日は特に重要です。このツールでは、さらに <b>AC=CD の日を起点にした基本数値</b>（9・17・26…日目）も追います。</p>
+<p>三波動の決め方（このツールの「定型」）：下げなら A＝期間の最高値、B＝A 以降の最安値、C＝B 以降の最高値。上げなら A＝最安値、B＝A 以降の最高値、C＝B 以降の最安値です。チャート上で A・B・C を自分で動かして決めることもできます。</p>
+</section>
+
+<section id="ja7"><h2>7. 相場水準</h2>
+<p>相場水準は、もみ合いの軸になる値段です。もみ合いとは「ある価格を軸に、同じくらいの高値・安値を作る動き」で、放れはこの水準から出発しやすいとされます。</p>
+<h3>見つけ方（半値水準）</h3>
+<p>ある期間の高値と安値の半値を出し、その期間の始まりから<b>時間を過去へさかのぼって最初にその値段を付けた日</b>を起点とします。起点からの基本数値の日は、①高値、③安値、②水準そのもの、のどれかにとどまりやすくなります。</p>
+<h3>その他の目安</h3>
+<ul><li>三波動の変化日・計算値で反応がなかった位置は起点になりやすい</li>
+<li>基準線・先行スパンが横ばいの値段は相場水準になりやすい</li>
+<li>遅行スパンと実線が交わるポイントは起点・相場水準になりやすい</li></ul>
+<p>もみ合いの限界の目安は、<b>水準 × 2 − 反対側の極値</b>です。</p>
+</section>
+
+<section id="ja8"><h2>8. 基本数値足（3日足・9週足）</h2>
+<p>当日の終値と、n 本前の始値を比べて作る足です。終値が高ければ陽、低ければ陰とし、陽（陰）が何本続いたかを見ます。日足では <b>3日足</b>、週足では <b>9週足</b>がよく使われます。陽連・陰連の長さに対等数値を当てると、流れが変わりそうな時期の目安になります。</p>
+</section>
+
+<section id="ja9"><h2>9. このツールの使い方</h2>
+<ol><li>上の欄にコードか銘柄名を入れて「分析」。日本株（7203）、米国株（AAPL）、ベトナム株（FPT、市場を「ベトナム株」に）、指数（日経平均、VNINDEX）に対応</li>
+<li>タブで 5分足・1時間足・日足・週足・月足を切り替え。「上下反転」で下げ相場を上げ相場として読み直せます</li>
+<li>右側に総合所見、D 予測日、変化日、計算値、相場水準、三波動の候補が出ます。候補の行をクリックするとチャートが切り替わります</li>
+<li>A・B・C の丸をドラッグして ▲▼ の位置へ動かし、「A・B・C で再計算」を押すと、自分の三波動で計算し直します（スマホは指で操作）</li></ol>
+<div class="note">このツールは分析の補助であり、投資の助言ではありません。日付は営業日の近似で、祝日は考慮していません。</div>
+</section>
+</div>
+
+<!-- ===================== English ===================== -->
+<div data-l="en">
+<nav class="toc"><b>Contents</b><ol>
+<li><a href="#en1">What is Ichimoku?</a></li><li><a href="#en2">The five lines</a></li><li><a href="#en3">Time theory: basic numbers, equal numbers, change dates</a></li>
+<li><a href="#en4">Wave theory: I, V, N and intermediate waves</a></li><li><a href="#en5">Price targets: E, N, V, NT</a></li>
+<li><a href="#en6">Three-wave structure and projected end D</a></li><li><a href="#en7">Price levels (sōba suijun)</a></li><li><a href="#en8">Basic-number bars (3-day, 9-week)</a></li>
+<li><a href="#en9">How to use this tool</a></li></ol></nav>
+
+<section id="en1"><h2>1. What is Ichimoku Kinko Hyo?</h2>
+<p>Ichimoku Kinko Hyo (“equilibrium chart at a glance”) looks at the market from three sides: <b>time</b>, <b>waves</b> and <b>price range</b>. Each line on the chart connects the <b>midpoint of the high and low</b> over a period — the price where buyers and sellers are in balance.</p>
+<p>The point is not to trade line crossovers mechanically, but to ask in order: “Is the market moving or not?”, “Up or down?”, and “Until when, and how far?”.</p>
+<div class="note"><b>Time</b> matters most. A price target may or may not be reached, but a change date (a time turning point) always arrives.</div>
+</section>
+
+<section id="en2"><h2>2. The five lines</h2>
+<table><tr><th>Line</th><th>Calculation</th><th>How to read it</th></tr>
+<tr><td>Conversion line (Tenkan)</td><td>(highest + lowest of the last 9 bars) ÷ 2</td><td>Short-term balance; first guide for pullbacks</td></tr>
+<tr><td>Base line (Kijun)</td><td>(highest + lowest of the last 26 bars) ÷ 2</td><td>Medium-term balance; its slope shows direction</td></tr>
+<tr><td>Leading span A</td><td>(conversion + base) ÷ 2, shifted 26 bars ahead</td><td>The area between the two spans is the “cloud”, often support/resistance</td></tr>
+<tr><td>Leading span B</td><td>(highest + lowest of the last 52 bars) ÷ 2, 26 bars ahead</td><td>Long-term balance</td></tr>
+<tr><td>Lagging span (Chikou)</td><td>Today's close plotted 26 bars back</td><td>Compares today's price with 26 bars ago; crossings with price are often turning points</td></tr></table>
+<p>The “three-signal turn” (conversion &gt; base, price &gt; cloud, lagging span &gt; price) is not a buy signal; it means price has left the 26-bar range and escaped the influence of the prior decline. This tool also shows a <b>3-bar lagging span</b> on the daily chart and a <b>9-bar</b> one on the weekly chart.</p>
+</section>
+
+<section id="en3"><h2>3. Time theory: basic numbers, equal numbers, change dates</h2>
+<p><b>Basic numbers</b> are bar counts at which turns tend to happen. The origin bar counts as bar 1.</p>
+<table><tr><th>Basic number</th><th>Name / note</th></tr>
+<tr><td>9</td><td>Issetsu (one section)</td></tr><tr><td>17</td><td>two sections</td></tr><tr><td>26</td><td>Ikki (one period)</td></tr>
+<tr><td>33 · 42 · 51 · 65</td><td>combinations of 9 and 26 (overlapping end counted once)</td></tr>
+<tr><td>76</td><td>Ichijun (one cycle)</td></tr><tr><td>129 · 172 · 200 · 226 · 257 …</td><td>226 = Ikkan</td></tr></table>
+<p><b>Equal numbers</b> repeat the duration of a past move. If a rally took 21 days, watch day 21 of the next move.</p>
+<p><b>Change dates</b> are days where basic numbers and equal numbers from important highs/lows overlap. They are not days that “must” turn — they are days to <b>check whether the market reacts</b> (makes a high or low) or keeps going. No reaction means the current move is strong.</p>
+</section>
+
+<section id="en4"><h2>4. Wave theory: I, V, N and intermediate waves</h2>
+<p>Price moves are combinations of a one-way <b>I wave</b>, an up-then-down (or down-then-up) <b>V wave</b>, and an up–pullback–up <b>N wave</b>. The N wave is the basis: rising highs and lows mean an uptrend, falling ones a downtrend.</p>
+<p>Unclear shapes are <b>intermediate waves</b> and are treated as ranges:</p>
+<ul><li><b>P wave</b>: lower highs and higher lows (inside). Preparing to break out</li>
+<li><b>Y wave</b>: higher highs and lower lows (outside)</li>
+<li><b>S wave</b>: supported (capped) at the previous high (low)</li></ul>
+</section>
+
+<section id="en5"><h2>5. Price targets: E, N, V, NT</h2>
+<p>From an up N wave A (low) → B (high) → C (pullback low), project the next target (reverse the signs for a down wave).</p>
+<table><tr><th>Name</th><th>Formula (up)</th><th>Meaning</th></tr>
+<tr><td>E target</td><td>B + (B − A)</td><td>Doubles the first leg from B. Reaching it shows strong momentum</td></tr>
+<tr><td>N target</td><td>C + (B − A)</td><td>First leg added to C. The most basic target</td></tr>
+<tr><td>V target</td><td>B + (B − C)</td><td>Pullback size bounced back from B</td></tr>
+<tr><td>NT target</td><td>C + (C − A)</td><td>The rise of the pullback low. A modest target</td></tr></table>
+<p>Reaching E suggests momentum dominates; stopping at N or V suggests price may still be ranging around B. When the range becomes an inside pattern (P wave), the <b>P target</b> = C ± (A − B) gives a breakout guide.</p>
+<figure><svg data-fig="n"></svg><figcaption>A → B → C three-wave: time (AB, BC, CD) and price targets (N, E, NT)</figcaption></figure>
+</section>
+
+<section id="en6"><h2>6. Three-wave structure and projected end D</h2>
+<p>A→B is wave 1, B→C wave 2 and C→D wave 3. Once waves 1 and 2 are set, the end of wave 3 can be projected in time:</p>
+<table><tr><th>Relation</th><th>Meaning</th></tr>
+<tr><td>AB = BD</td><td>same number of bars as AB, counted from B</td></tr>
+<tr><td>AB = CD</td><td>same number of bars as AB, counted from C</td></tr>
+<tr><td>AC = CD</td><td>same number of bars as AC, counted from C</td></tr></table>
+<p>Days where A–D equals a basic number (e.g. 76, 129) are especially important. This tool also tracks <b>basic numbers counted from the AC=CD date</b> (days 9, 17, 26 …).</p>
+<p>Standard three-wave in this tool: for a decline, A = highest of the period, B = lowest after A, C = highest after B. For a rise, A = lowest, B = highest after A, C = lowest after B. You can also drag A·B·C on the chart to set your own.</p>
+</section>
+
+<section id="en7"><h2>7. Price levels (sōba suijun)</h2>
+<p>A price level is the axis of a range — “movement that makes similar highs and lows around one price”. Breakouts tend to start from this level.</p>
+<h3>Finding it (midpoint method)</h3>
+<p>Take the midpoint of a period's high and low. Going <b>back in time from the start of that period</b>, the first day that traded at that price is the origin. Basic-number days from the origin tend to stop at ① a high, ③ a low, or ② the level itself.</p>
+<h3>Other clues</h3>
+<ul><li>Points where three-wave change dates or targets drew no reaction often become origins</li>
+<li>Prices where the base line or leading spans run flat tend to become levels</li>
+<li>Points where the lagging span crosses price tend to be origins and levels</li></ul>
+<p>A rough range limit is <b>level × 2 − the opposite extreme</b>.</p>
+</section>
+
+<section id="en8"><h2>8. Basic-number bars (3-day, 9-week)</h2>
+<p>Compare today's close with the open n bars earlier: higher is a bull bar, lower a bear bar, and count how many in a row. The <b>3-day bar</b> on daily charts and the <b>9-week bar</b> on weekly charts are common. Applying equal numbers to these runs hints when the flow may change.</p>
+</section>
+
+<section id="en9"><h2>9. How to use this tool</h2>
+<ol><li>Enter a code or name and press “Analyze”. Japanese stocks (7203), US stocks (AAPL), Vietnamese stocks (FPT — set market to “Vietnam stocks”) and indexes (Nikkei 225, VNINDEX) are supported</li>
+<li>Switch between 5-min, 1-hour, daily, weekly and monthly with the tabs. “Invert” lets you read a downtrend as an uptrend</li>
+<li>The side panel shows the overall view, projected D, change dates, targets, price levels and three-wave candidates. Click a candidate row to update the chart</li>
+<li>Drag the A·B·C circles onto ▲▼ and press “Recalculate A·B·C” to recompute with your own three-wave (use your finger on a phone)</li></ol>
+<div class="note">This tool supports analysis; it is not investment advice. Dates are business-day approximations and ignore holidays.</div>
+</section>
+</div>
+
+<!-- ===================== Tiếng Việt ===================== -->
+<div data-l="vi">
+<nav class="toc"><b>Mục lục</b><ol>
+<li><a href="#vi1">Ichimoku là gì?</a></li><li><a href="#vi2">Năm đường</a></li><li><a href="#vi3">Lý thuyết thời gian: số cơ bản, số đối xứng, ngày đổi xu hướng</a></li>
+<li><a href="#vi4">Lý thuyết sóng: sóng I, V, N và sóng trung gian</a></li><li><a href="#vi5">Mục tiêu giá: E, N, V, NT</a></li>
+<li><a href="#vi6">Cấu trúc sóng ba và ngày kết thúc D</a></li><li><a href="#vi7">Mức giá cân bằng</a></li><li><a href="#vi8">Nến số cơ bản (3 ngày, 9 tuần)</a></li>
+<li><a href="#vi9">Cách dùng công cụ</a></li></ol></nav>
+
+<section id="vi1"><h2>1. Ichimoku Kinko Hyo là gì?</h2>
+<p>Ichimoku Kinko Hyo (“biểu đồ cân bằng nhìn một lần”) xem thị trường từ ba mặt: <b>thời gian</b>, <b>sóng</b> và <b>biên độ giá</b>. Mỗi đường trên biểu đồ nối <b>điểm giữa của đỉnh và đáy</b> trong một kỳ — mức giá mà bên mua và bên bán cân bằng.</p>
+<p>Điều quan trọng không phải là giao dịch máy móc theo giao cắt của các đường, mà là lần lượt tự hỏi: “Thị trường có chuyển động không?”, “Tăng hay giảm?”, và “Đến khi nào, tới mức nào?”.</p>
+<div class="note"><b>Thời gian</b> là yếu tố quan trọng nhất. Mục tiêu giá có thể đạt hoặc không, nhưng ngày đổi xu hướng (mốc thời gian) thì luôn đến.</div>
+</section>
+
+<section id="vi2"><h2>2. Năm đường</h2>
+<table><tr><th>Đường</th><th>Cách tính</th><th>Cách đọc</th></tr>
+<tr><td>Đường chuyển đổi (Tenkan)</td><td>(cao nhất + thấp nhất 9 nến) ÷ 2</td><td>Cân bằng ngắn hạn; mốc đầu tiên cho nhịp điều chỉnh</td></tr>
+<tr><td>Đường cơ sở (Kijun)</td><td>(cao nhất + thấp nhất 26 nến) ÷ 2</td><td>Cân bằng trung hạn; độ dốc cho biết hướng</td></tr>
+<tr><td>Đường dẫn A</td><td>(chuyển đổi + cơ sở) ÷ 2, dời tới trước 26 nến</td><td>Vùng giữa hai đường dẫn là “mây”, thường là hỗ trợ/kháng cự</td></tr>
+<tr><td>Đường dẫn B</td><td>(cao nhất + thấp nhất 52 nến) ÷ 2, dời tới trước 26 nến</td><td>Cân bằng dài hạn</td></tr>
+<tr><td>Đường trễ (Chikou)</td><td>Giá đóng cửa hôm nay vẽ lùi 26 nến</td><td>So sánh giá hiện tại với 26 nến trước; chỗ cắt với giá thường là mốc</td></tr></table>
+<p>“Ba tín hiệu tích cực” (chuyển đổi &gt; cơ sở, giá &gt; mây, đường trễ &gt; giá) không phải tín hiệu mua; nó cho biết giá đã thoát vùng đi ngang 26 nến và thoát ảnh hưởng của đợt giảm trước. Công cụ này còn hiển thị <b>đường trễ 3 nến</b> trên biểu đồ ngày và <b>9 nến</b> trên biểu đồ tuần.</p>
+</section>
+
+<section id="vi3"><h2>3. Lý thuyết thời gian: số cơ bản, số đối xứng, ngày đổi xu hướng</h2>
+<p><b>Số cơ bản</b> là số nến mà tại đó thị trường dễ đổi chiều. Nến gốc được tính là nến thứ 1.</p>
+<table><tr><th>Số cơ bản</th><th>Tên / ghi chú</th></tr>
+<tr><td>9</td><td>Issetsu (một đoạn)</td></tr><tr><td>17</td><td>hai đoạn</td></tr><tr><td>26</td><td>Ikki (một kỳ)</td></tr>
+<tr><td>33 · 42 · 51 · 65</td><td>tổ hợp của 9 và 26 (đầu mút trùng tính một lần)</td></tr>
+<tr><td>76</td><td>Ichijun (một vòng)</td></tr><tr><td>129 · 172 · 200 · 226 · 257 …</td><td>226 = Ikkan</td></tr></table>
+<p><b>Số đối xứng</b> lặp lại độ dài của một nhịp trước đó. Nếu đợt tăng mất 21 ngày, hãy chú ý ngày thứ 21 của nhịp tiếp theo.</p>
+<p><b>Ngày đổi xu hướng</b> là ngày mà các số cơ bản và số đối xứng từ những đỉnh/đáy quan trọng trùng nhau. Đó không phải ngày “chắc chắn” đảo chiều mà là ngày cần <b>kiểm tra thị trường có phản ứng</b> (tạo đỉnh hoặc đáy) hay vẫn tiếp diễn. Không phản ứng nghĩa là xu hướng hiện tại mạnh.</p>
+</section>
+
+<section id="vi4"><h2>4. Lý thuyết sóng: sóng I, V, N và sóng trung gian</h2>
+<p>Biến động giá là sự kết hợp của <b>sóng I</b> một chiều, <b>sóng V</b> tăng rồi giảm (hoặc ngược lại), và <b>sóng N</b> tăng – điều chỉnh – tăng. Sóng N là nền tảng: đỉnh và đáy cao dần là xu hướng tăng, thấp dần là xu hướng giảm.</p>
+<p>Các hình dạng không rõ ràng là <b>sóng trung gian</b>, được xem như vùng đi ngang:</p>
+<ul><li><b>Sóng P</b>: đỉnh thấp dần, đáy cao dần (thu hẹp). Chuẩn bị bứt phá</li>
+<li><b>Sóng Y</b>: đỉnh cao dần, đáy thấp dần (mở rộng)</li>
+<li><b>Sóng S</b>: được đỡ (bị chặn) tại đỉnh (đáy) trước đó</li></ul>
+</section>
+
+<section id="vi5"><h2>5. Mục tiêu giá: E, N, V, NT</h2>
+<p>Từ sóng N tăng A (đáy) → B (đỉnh) → C (đáy điều chỉnh), ước tính mục tiêu tiếp theo (đảo dấu với sóng giảm).</p>
+<table><tr><th>Tên</th><th>Công thức (tăng)</th><th>Ý nghĩa</th></tr>
+<tr><td>Mục tiêu E</td><td>B + (B − A)</td><td>Nhân đôi nhịp đầu từ B. Đạt được cho thấy đà rất mạnh</td></tr>
+<tr><td>Mục tiêu N</td><td>C + (B − A)</td><td>Cộng nhịp đầu vào C. Mục tiêu cơ bản nhất</td></tr>
+<tr><td>Mục tiêu V</td><td>B + (B − C)</td><td>Độ sâu điều chỉnh bật lại từ B</td></tr>
+<tr><td>Mục tiêu NT</td><td>C + (C − A)</td><td>Mức nâng của đáy điều chỉnh. Mục tiêu khiêm tốn</td></tr></table>
+<p>Đạt E cho thấy đà chiếm ưu thế; dừng ở N hoặc V cho thấy giá có thể vẫn đi ngang quanh B. Khi vùng đi ngang thành dạng thu hẹp (sóng P), <b>mục tiêu P</b> = C ± (A − B) là mốc bứt phá.</p>
+<figure><svg data-fig="n"></svg><figcaption>Sóng ba A → B → C: thời gian (AB, BC, CD) và mục tiêu giá (N, E, NT)</figcaption></figure>
+</section>
+
+<section id="vi6"><h2>6. Cấu trúc sóng ba và ngày kết thúc D</h2>
+<p>A→B là sóng 1, B→C là sóng 2 và C→D là sóng 3. Khi đã có sóng 1 và 2, có thể ước tính thời điểm kết thúc sóng 3:</p>
+<table><tr><th>Quan hệ</th><th>Ý nghĩa</th></tr>
+<tr><td>AB = BD</td><td>cùng số nến như AB, tính từ B</td></tr>
+<tr><td>AB = CD</td><td>cùng số nến như AB, tính từ C</td></tr>
+<tr><td>AC = CD</td><td>cùng số nến như AC, tính từ C</td></tr></table>
+<p>Ngày mà A–D bằng một số cơ bản (vd 76, 129) đặc biệt quan trọng. Công cụ này còn theo dõi <b>số cơ bản tính từ ngày AC=CD</b> (ngày thứ 9, 17, 26 …).</p>
+<p>Sóng ba chuẩn trong công cụ: với xu hướng giảm, A = cao nhất kỳ, B = thấp nhất sau A, C = cao nhất sau B. Với xu hướng tăng, A = thấp nhất, B = cao nhất sau A, C = thấp nhất sau B. Bạn cũng có thể kéo A·B·C trên biểu đồ để tự đặt.</p>
+</section>
+
+<section id="vi7"><h2>7. Mức giá cân bằng</h2>
+<p>Mức giá cân bằng là trục của vùng đi ngang — “dao động tạo các đỉnh, đáy tương tự quanh một mức giá”. Bứt phá thường bắt đầu từ mức này.</p>
+<h3>Cách tìm (phương pháp điểm giữa)</h3>
+<p>Lấy điểm giữa của đỉnh và đáy trong một kỳ. <b>Đi ngược thời gian từ đầu kỳ đó</b>, ngày đầu tiên chạm mức giá này là điểm gốc. Ngày số cơ bản tính từ gốc thường dừng ở ① đỉnh, ③ đáy, hoặc ② chính mức đó.</p>
+<h3>Dấu hiệu khác</h3>
+<ul><li>Điểm mà ngày đổi xu hướng hoặc mục tiêu của sóng ba không có phản ứng thường trở thành gốc</li>
+<li>Mức giá mà đường cơ sở hoặc đường dẫn đi ngang thường trở thành mức cân bằng</li>
+<li>Điểm đường trễ cắt giá thường là gốc và mức cân bằng</li></ul>
+<p>Giới hạn vùng đi ngang ước tính bằng <b>mức × 2 − cực trị phía đối diện</b>.</p>
+</section>
+
+<section id="vi8"><h2>8. Nến số cơ bản (3 ngày, 9 tuần)</h2>
+<p>So sánh giá đóng cửa hôm nay với giá mở cửa n nến trước: cao hơn là nến tăng, thấp hơn là nến giảm, và đếm số nến liên tiếp. Thường dùng <b>nến 3 ngày</b> trên biểu đồ ngày và <b>nến 9 tuần</b> trên biểu đồ tuần. Áp số đối xứng vào các chuỗi này giúp đoán khi nào dòng chảy có thể đổi.</p>
+</section>
+
+<section id="vi9"><h2>9. Cách dùng công cụ</h2>
+<ol><li>Nhập mã hoặc tên rồi bấm “Phân tích”. Hỗ trợ cổ phiếu Nhật (7203), Mỹ (AAPL), Việt Nam (FPT — chọn thị trường “Cổ phiếu Việt Nam”) và chỉ số (Nikkei 225, VNINDEX)</li>
+<li>Chuyển giữa 5 phút, 1 giờ, ngày, tuần, tháng bằng các tab. “Đảo ngược” giúp đọc xu hướng giảm như xu hướng tăng</li>
+<li>Bảng bên hiển thị nhận định, ngày D, ngày đổi xu hướng, mục tiêu, mức giá và các ứng viên sóng ba. Bấm một dòng để cập nhật biểu đồ</li>
+<li>Kéo các vòng A·B·C tới ▲▼ rồi bấm “Tính lại A·B·C” để tính theo sóng ba của bạn (trên điện thoại dùng ngón tay)</li></ol>
+<div class="note">Công cụ này hỗ trợ phân tích, không phải lời khuyên đầu tư. Ngày là ước tính theo ngày làm việc, chưa tính ngày lễ.</div>
+</section>
+</div>
+
+</main>
+<script>
+(function(){
+  const q=new URLSearchParams(location.search).get('lang');
+  let L=q; try{ if(!L) L=localStorage.getItem('lang') }catch(e){}
+  if(!L){const n=navigator.language||''; L=n.startsWith('vi')?'vi':n.startsWith('ja')?'ja':'en'}
+  const set=l=>{document.documentElement.lang=l; document.getElementById('lang').value=l;
+    document.title={ja:'一目均衡表の解説',en:'Ichimoku Guide',vi:'Hướng dẫn Ichimoku'}[l];
+    try{localStorage.setItem('lang',l)}catch(e){}};
+  set(['ja','en','vi'].includes(L)?L:'ja');
+  document.getElementById('lang').onchange=e=>set(e.target.value);
+  const t=document.getElementById('fig-n').innerHTML;
+  document.querySelectorAll('svg[data-fig=n]').forEach(s=>{s.outerHTML=t});
+})();
+</script>
+</body>
+</html>

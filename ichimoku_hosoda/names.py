@@ -37,7 +37,92 @@ SPECIAL = [  # (表示名, シンボル, 別名…)
     ("NYダウ", "^DJI", ["ダウ", "DOW"]),
     ("S&P500", "^GSPC", ["SP500", "S&P"]),
     ("ナスダック総合", "^IXIC", ["ナスダック", "NASDAQ"]),
+    ("VN-Index（ベトナム）", "^VNINDEX.VN", ["VNINDEX", "VN-INDEX", "ベトナム指数", "ホーチミン指数"]),
+    ("米ドル/ベトナムドン", "USDVND=X", ["USDVND", "ドン"]),
 ]
+
+# 米国株（主要銘柄）: (表示名, シンボル, 別名)
+US_LIST = [
+    ('Apple', 'AAPL', ['アップル']),
+    ('Microsoft', 'MSFT', ['マイクロソフト']),
+    ('NVIDIA', 'NVDA', ['エヌビディア']),
+    ('Amazon.com', 'AMZN', ['アマゾン']),
+    ('Alphabet (Google) A', 'GOOGL', ['グーグル', 'アルファベット']),
+    ('Meta Platforms', 'META', ['メタ', 'フェイスブック']),
+    ('Tesla', 'TSLA', ['テスラ']),
+    ('Berkshire Hathaway B', 'BRK-B', ['バークシャー']),
+    ('Broadcom', 'AVGO', ['ブロードコム']),
+    ('JPMorgan Chase', 'JPM', ['JPモルガン']),
+    ('Visa', 'V', ['ビザ']),
+    ('Mastercard', 'MA', ['マスターカード']),
+    ('UnitedHealth', 'UNH', ['ユナイテッドヘルス']),
+    ('Exxon Mobil', 'XOM', ['エクソン']),
+    ('Eli Lilly', 'LLY', ['イーライリリー']),
+    ('Johnson & Johnson', 'JNJ', ['ジョンソン']),
+    ('Walmart', 'WMT', ['ウォルマート']),
+    ('Procter & Gamble', 'PG', ['P&G', 'プロクター']),
+    ('Home Depot', 'HD', ['ホームデポ']),
+    ('Costco', 'COST', ['コストコ']),
+    ('Netflix', 'NFLX', ['ネットフリックス']),
+    ('AMD', 'AMD', ['エーエムディー']),
+    ('Intel', 'INTC', ['インテル']),
+    ('Coca-Cola', 'KO', ['コカコーラ']),
+    ('PepsiCo', 'PEP', ['ペプシ']),
+    ('Walt Disney', 'DIS', ['ディズニー']),
+    ('Boeing', 'BA', ['ボーイング']),
+    ('Nike', 'NKE', ['ナイキ']),
+    ('Oracle', 'ORCL', ['オラクル']),
+    ('Salesforce', 'CRM', ['セールスフォース']),
+    ('Adobe', 'ADBE', ['アドビ']),
+    ('Qualcomm', 'QCOM', ['クアルコム']),
+    ('Palantir', 'PLTR', ['パランティア']),
+    ('Taiwan Semiconductor ADR', 'TSM', ['TSMC', '台湾積体電路']),
+    ('SPDR S&P500 ETF', 'SPY', ['エスアンドピー', 'ETF']),
+    ('Invesco QQQ', 'QQQ', ['ナスダック100', 'ETF']),
+]
+# ベトナム株（VN30 ほか）: (表示名, シンボル, 別名)
+VN_LIST = [
+    ('Ngân hàng Á Châu (ACB)', 'ACB.VN', ['ACB', 'VN:ACB', 'Asia', 'Commercial', 'Bank']),
+    ('Becamex IDC', 'BCM.VN', ['BCM', 'VN:BCM']),
+    ('BIDV', 'BID.VN', ['BID', 'VN:BID', 'Ngân', 'hàng', 'Đầu', 'tư', 'và', 'Phát', 'triển']),
+    ('Bảo Việt', 'BVH.VN', ['BVH', 'VN:BVH', 'Bao', 'Viet', 'Holdings']),
+    ('VietinBank', 'CTG.VN', ['CTG', 'VN:CTG', 'Ngân', 'hàng', 'Công', 'Thương']),
+    ('FPT', 'FPT.VN', ['FPT', 'VN:FPT', 'FPT', 'Corporation']),
+    ('PV Gas', 'GAS.VN', ['GAS', 'VN:GAS', 'Tổng', 'công', 'ty', 'Khí']),
+    ('Cao su Việt Nam', 'GVR.VN', ['GVR', 'VN:GVR', 'Vietnam', 'Rubber', 'Group']),
+    ('HDBank', 'HDB.VN', ['HDB', 'VN:HDB']),
+    ('Hòa Phát', 'HPG.VN', ['HPG', 'VN:HPG', 'Hoa', 'Phat', 'Group', 'thép']),
+    ('MB Bank', 'MBB.VN', ['MBB', 'VN:MBB', 'Ngân', 'hàng', 'Quân', 'đội']),
+    ('Masan', 'MSN.VN', ['MSN', 'VN:MSN', 'Masan', 'Group']),
+    ('Thế Giới Di Động', 'MWG.VN', ['MWG', 'VN:MWG', 'Mobile', 'World']),
+    ('Petrolimex', 'PLX.VN', ['PLX', 'VN:PLX']),
+    ('PV Power', 'POW.VN', ['POW', 'VN:POW']),
+    ('Sabeco', 'SAB.VN', ['SAB', 'VN:SAB', 'bia', 'Sài', 'Gòn']),
+    ('SHB', 'SHB.VN', ['SHB', 'VN:SHB', 'Ngân', 'hàng', 'Sài', 'Gòn', 'Hà', 'Nội']),
+    ('SeABank', 'SSB.VN', ['SSB', 'VN:SSB']),
+    ('Chứng khoán SSI', 'SSI.VN', ['SSI', 'VN:SSI', 'SSI', 'Securities']),
+    ('Sacombank', 'STB.VN', ['STB', 'VN:STB']),
+    ('Techcombank', 'TCB.VN', ['TCB', 'VN:TCB']),
+    ('TPBank', 'TPB.VN', ['TPB', 'VN:TPB']),
+    ('Vietcombank', 'VCB.VN', ['VCB', 'VN:VCB', 'Ngân', 'hàng', 'Ngoại', 'thương']),
+    ('Vinhomes', 'VHM.VN', ['VHM', 'VN:VHM']),
+    ('VIB', 'VIB.VN', ['VIB', 'VN:VIB']),
+    ('Vingroup', 'VIC.VN', ['VIC', 'VN:VIC']),
+    ('Vietjet Air', 'VJC.VN', ['VJC', 'VN:VJC', 'ベトジェット']),
+    ('Vinamilk', 'VNM.VN', ['VNM', 'VN:VNM', 'ビナミルク', 'sữa']),
+    ('VPBank', 'VPB.VN', ['VPB', 'VN:VPB']),
+    ('Vincom Retail', 'VRE.VN', ['VRE', 'VN:VRE']),
+    ('Hóa chất Đức Giang', 'DGC.VN', ['DGC', 'VN:DGC']),
+    ('Chứng khoán VNDirect', 'VND.VN', ['VND', 'VN:VND']),
+    ('PNJ', 'PNJ.VN', ['PNJ', 'VN:PNJ', 'vàng', 'bạc', 'đá', 'quý', 'Phú', 'Nhuận']),
+    ('REE', 'REE.VN', ['REE', 'VN:REE']),
+    ('Khang Điền', 'KDH.VN', ['KDH', 'VN:KDH']),
+    ('Novaland', 'NVL.VN', ['NVL', 'VN:NVL']),
+    ('Đất Xanh', 'DXG.VN', ['DXG', 'VN:DXG']),
+    ('Chứng khoán Vietcap', 'VCI.VN', ['VCI', 'VN:VCI']),
+    ('Gemadept', 'GMD.VN', ['GMD', 'VN:GMD']),
+]
+
 
 _lock = threading.Lock()
 _df: pd.DataFrame | None = None
@@ -157,6 +242,11 @@ def search(q: str, limit: int = 15) -> list[dict]:
     for disp, sym, aliases in SPECIAL:
         if any(k and (k in norm(a) or norm(a).startswith(k)) for a in [disp, sym] + aliases):
             res.append({"code": sym, "symbol": sym, "name": disp, "market": "指数・為替", "industry": ""})
+    for lst, mk in ((US_LIST, "米国株"), (VN_LIST, "ベトナム株")):
+        for disp, sym, aliases in lst:
+            tick = sym.replace(".VN", "")
+            if (k and any(norm(x).startswith(k) or (len(k) >= 3 and k in norm(x)) for x in [disp, sym, tick] + aliases)):
+                res.append({"code": sym, "symbol": sym, "name": disp, "market": mk, "industry": ""})
     df = _ensure(block=True)
     if df is not None and len(df):
         uq = unicodedata.normalize("NFKC", q).upper()
@@ -175,8 +265,8 @@ def search(q: str, limit: int = 15) -> list[dict]:
 
 def name_for(code: str) -> str | None:
     c = (code or "").strip().upper()
-    for disp, sym, aliases in SPECIAL:
-        if c in (sym.upper(), *(a.upper() for a in aliases)):
+    for disp, sym, aliases in SPECIAL + US_LIST + VN_LIST:
+        if c in (sym.upper(), sym.upper().replace(".VN", ""), *(a.upper() for a in aliases)):
             return disp
     c = re.sub(r"\.T$", "", c)
     df = _ensure(block=False)

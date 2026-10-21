@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>一目均衡表 節目判定</title>
+<script src="/static/i18n.js" charset="utf-8"></script>
 <script src="/static/plotly.min.js" charset="utf-8"></script>
 <style>
 :root{--bg:#f6f5f1;--panel:#fff;--ink:#1f2328;--mute:#6b7280;--line:#e5e2da;--acc:#8a5a1e;--up:#c0392b;--dn:#1f5f8b;--lv:#7d3c98;--cd:#b9770e}
@@ -92,9 +93,12 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
     <input id="code" placeholder="コード or 銘柄名（例: 4506 / 住友ファーマ / 日経平均）" value="" autocomplete="off" style="width:300px">
     <div id="sugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.08);z-index:20;max-height:320px;overflow:auto;font-size:13px"></div>
   </div>
+  <select id="market" title="市場"><option value="auto">自動</option><option value="jp">日本株</option><option value="us">米国株</option><option value="vn">ベトナム株</option></select>
   <select id="period" title="日足の期間（週足・月足もこの範囲から作成）"><option value="6mo">6か月</option><option value="1y">1年</option><option value="3y">3年</option><option value="6y" selected>6年</option></select>
   <button class="primary" id="go">分析</button>
   <label class="file">CSV を読む <input type="file" id="csv" accept=".csv,text/csv"></label>
+  <select id="lang" title="Language" style="padding:6px 6px"><option value="ja">日本語</option><option value="en">English</option><option value="vi">Tiếng Việt</option></select>
+  <a id="guidelink" href="/guide" style="font-size:13px;color:var(--acc)">一目均衡表の解説</a>
   <span id="status">コードを入力して「分析」。動作確認は DEMO</span>
 </header>
 <div class="tabs" id="tabs"></div>
@@ -121,13 +125,15 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
 let DATA=null, FRAME='daily', INV=false, SEL_WAVE=0;
 const $=s=>document.querySelector(s);
 const fmt=v=>v==null?'-':v.toLocaleString('ja-JP',{maximumFractionDigits:v<100?3:1});
-const st=(m,err)=>{const e=$('#status');e.textContent=m;e.className=err?'err':''};
+const st=(m,err)=>{const e=$('#status');e.textContent=tr(m);e.className=err?'err':''};
 
+const APICODE=()=>(DATA&&DATA.api_code)||$('#code').value.trim();
 async function run(){
   const code=$('#code').value.trim(); if(!code)return;
+  try{sessionStorage.setItem('lastcode',code); sessionStorage.setItem('lastmarket',$('#market').value)}catch(e){}
   $('#go').disabled=true; st(`${code} を取得・分析中…`);
   try{
-    const r=await fetch(`/api/analyze?code=${encodeURIComponent(code)}&period=${$('#period').value}`);
+    const r=await fetch(`/api/analyze?code=${encodeURIComponent(code)}&period=${$('#period').value}&market=${$('#market').value}`);
     if(!r.ok){const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail)}
     DATA=await r.json(); FRAME='daily'; SEL_WAVE=0; render(); st(`${DATA.display_name?DATA.display_name+'（'+DATA.name+'）':DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`);
   }catch(e){st(e.message,true)} finally{$('#go').disabled=false}
@@ -138,7 +144,7 @@ const hideSugg=()=>{$('#sugg').style.display='none'; SUGG_I=-1};
 const pick=i=>{const x=SUGG[i]; if(!x) return; $('#code').value=x.code; hideSugg(); run()};
 const drawSugg=()=>{const b=$('#sugg'); if(!SUGG.length){hideSugg();return}
   b.innerHTML=SUGG.map((x,i)=>`<div class="${i===SUGG_I?'on':''}" data-i="${i}"><b>${x.code}</b>${x.name}<span>${x.market||''}${x.industry?'・'+x.industry:''}</span></div>`).join('');
-  b.style.display='block'; b.querySelectorAll('div').forEach(d=>d.onmousedown=e=>{e.preventDefault(); pick(+d.dataset.i)})};
+  b.style.display='block'; trDom(b); b.querySelectorAll('div').forEach(d=>d.onmousedown=e=>{e.preventDefault(); pick(+d.dataset.i)})};
 $('#code').addEventListener('input',()=>{clearTimeout(sTimer); const q=$('#code').value.trim(); if(!q){SUGG=[];hideSugg();return}
   sTimer=setTimeout(async()=>{try{const r=await fetch('/api/search?q='+encodeURIComponent(q)); const j=await r.json(); SUGG=j.results||[]; SUGG_I=-1; drawSugg()}catch(e){}},220)});
 $('#code').addEventListener('keydown',e=>{
@@ -168,13 +174,13 @@ function render(){
     // 動かしたが未計算の A・B・C も反転先へ持っていく（同じ足、高値⇔安値を入れ替え）
     if(PEND&&ABC&&PEND.key===ABC.key){const ref=refOf(base); if(ref!=null) CARRY={x:PEND.x.slice(), full:PEND.full.slice(), out:PEND.out.slice(), kind:PEND.kind.map(k=>k==='H'?'L':'H'), real:PEND.real.map(v=>2*ref-v)}}
     INV=e.target.checked; FRAME=base+(INV&&DATA.frames[base+'_inv']?'_inv':''); SEL_WAVE=0; render()};
-  const F=DATA.frames[FRAME]||DATA.frames[base]; $('#layers').style.display='block'; drawChart(F); drawSide(F);
+  const F=DATA.frames[FRAME]||DATA.frames[base]; $('#layers').style.display='block'; drawChart(F); drawSide(F); trDom($('#tabs'));
   ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
 let SEL_LEVEL=null;
 ['ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
 const LY=id=>$('#'+id).checked;
-$('#lytoggle').onclick=()=>{const L=$('#layers'); L.classList.toggle('open'); $('#lytoggle').textContent=L.classList.contains('open')?'表示設定 ▴':'表示設定 ▾'};
+$('#lytoggle').onclick=()=>{const L=$('#layers'); L.classList.toggle('open'); $('#lytoggle').textContent=tr(L.classList.contains('open')?'表示設定 ▴':'表示設定 ▾')};
 
 function drawChart(F){
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
@@ -311,28 +317,30 @@ function drawChart(F){
       ann.push({x:d.date,y:ymax+span*.04-span*.05*(seen.size%3),text:`D ${d.rel}（${past?`${-d.offset}${u}前・経過`:d.offset===0?'本日':`+${d.offset}${u}`}）`,showarrow:false,font:{size:9,color:'#0e7c86'},bgcolor:'rgba(255,255,255,.85)',xanchor:'left',yanchor:'top'})}));
   }
   $('#chart').style.height=NARROW()?((mg&&VOL)?'600px':(mg||VOL)?'520px':'440px'):(mg&&VOL)?'720px':(mg||VOL)?'640px':'560px';
-  Plotly.newPlot('chart',traces,{
+  const LAYOUT={
     title:{text:NARROW()?`<b>${DATA.display_name||DATA.name}</b> ${F.label} ${fmt(rp(F.close))}`:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:NARROW()?{l:38,r:6,t:34,b:26}:{l:50,r:20,t:40,b:30}, showlegend:!NARROW(), dragmode:TOUCH()?false:'zoom',xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
     ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
     ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
     yaxis:Object.assign({domain:DOM.p,tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
-    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'},{responsive:true,displaylogo:false,displayModeBar:!TOUCH(),scrollZoom:false}).then(gd=>deOverlap(gd));
-  updRecalc(); drawCalcBox(F, selW, ABC&&PEND&&PEND.key===ABC.key?PEND:null);
+    hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'};
+  window.ANN_PRIO=(LAYOUT.annotations||[]).map(a=>annPrio(a.text)); trPlot(traces,LAYOUT);
+  Plotly.newPlot('chart',traces,LAYOUT,{responsive:true,displaylogo:false,displayModeBar:!TOUCH(),scrollZoom:false}).then(gd=>deOverlap(gd));
+  updRecalc(); drawCalcBox(F, selW, ABC&&PEND&&PEND.key===ABC.key?PEND:null); trDom($('#calcbox')); trDom($('#layers'));
   const gd=$('#chart'); setupDrag(gd);
   gd.removeAllListeners&&gd.removeAllListeners('plotly_relayout'); gd.on('plotly_relayout',()=>{ if(!DEOV_BUSY) setTimeout(()=>deOverlap(gd),30) });
   if(!window._deovR){window._deovR=true; window.addEventListener('resize',()=>setTimeout(()=>deOverlap($('#chart')),250))} gd.removeAllListeners&&gd.removeAllListeners('plotly_click');
-  gd.on('plotly_click',async ev=>{const pt=ev.points&&ev.points[0]; if(!pt||!(pt.data.name==='高値'||pt.data.name==='安値')) return;
+  gd.on('plotly_click',async ev=>{const pt=ev.points&&ev.points[0]; if(!pt||!(pt.data.name===tr('高値')||pt.data.name===tr('安値'))) return;
     const piv=F.pivots.find(p=>p.date===pt.x&&Math.abs(p.price-pt.y)<1e-6); if(!piv) return;
     st(`起点 A = ${piv.date} ${fmt(rp(piv.price))} の三波動を計算中…`);
-    try{const r=await fetch(`/api/waves_from?code=${encodeURIComponent($('#code').value.trim())}&frame=${FRAME}&a_i=${piv.i}&period=${$('#period').value}`);
+    try{const r=await fetch(`/api/waves_from?code=${encodeURIComponent(APICODE())}&frame=${FRAME}&a_i=${piv.i}&period=${$('#period').value}`);
       if(!r.ok){const j=await r.json();throw new Error(j.detail)} const j=await r.json();
       if(!j.waves.length){st('その起点では三波動が成立しません（押し・戻りが起点を越えている）');return}
       const key=w=>w.A[0]+'|'+w.C[0]; const have=new Set(F.waves.map(key));
       const add=j.waves.filter(w=>!have.has(key(w))); F.waves=add.concat(F.waves); SEL_WAVE=0; drawChart(F); drawSide(F);
       st(`起点 ${piv.date} の三波動 ${j.waves.length} 件を追加（先頭に表示）`)}catch(e){st(e.message,true)}});
-  const mgErr=(LY('ly_mg')&&isD&&DATA.margin&&DATA.margin.error)?`【信用残を取得できませんでした：${DATA.margin.error}】 `:'';
-  $('#legendnote').textContent=mgErr+'紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／緑の一点鎖線＝AC=CD の日を起点にした基本数値日／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す';
+  const mgErr=(LY('ly_mg')&&isD&&DATA.margin&&DATA.margin.error&&!DATA.margin.skip)?`【信用残を取得できませんでした：${DATA.margin.error}】 `:'';
+  $('#legendnote').textContent=tr(mgErr)+tr('紫点線＝相場水準（◆起点、▲▼●＝起点からの基本数値日に高値・安値・同水準、○＝次の基本数値日）／橙破線＝変化日候補（下側）／青緑点線＝選択中の三波動の終了予測日 D（上側、経過した日も表示）／緑の一点鎖線＝AC=CD の日を起点にした基本数値日／E 赤・N 青・V 紫・NT 緑の実線＝選択中の三波動の計算値（C の日から右へ、点線＝達成済み、破線＝未計算の見込み）。▲▼をクリックするとその点を起点 A にした三波動を追加／三波動の A・B・C の丸はドラッグで ▲▼ の位置へ移動でき、「A・B・C で再計算」で計算値・D・変化日を引き直す');
 }
 
 // 表示範囲外で同じ位置に寄せた点は、ラベルを1つにまとめる（例: 「A・B←範囲外」）
@@ -363,14 +371,15 @@ async function deOverlap(gd){
     const hid={}; anns.forEach((a,i)=>{ if(a.visible===false) hid[`annotations[${i}].visible`]=true });
     if(Object.keys(hid).length) await Plotly.relayout(gd,hid);
     const els={}; gd.querySelectorAll('.annotation').forEach(g=>{const i=+g.getAttribute('data-index'); if(!isNaN(i)) els[i]=g});
-    const order=anns.map((a,i)=>i).filter(i=>els[i]).sort((a,b)=>annPrio(anns[a].text)-annPrio(anns[b].text)||a-b);
+    const PR=i=>(window.ANN_PRIO&&ANN_PRIO[i]!=null)?ANN_PRIO[i]:annPrio(anns[i].text);
+    const order=anns.map((a,i)=>i).filter(i=>els[i]).sort((a,b)=>PR(a)-PR(b)||a-b);
     const upd={};
     order.forEach(i=>{const cur=anns[i].yshift||0, b=rectOf(els[i]), h=b.bottom-b.top;
       const base={left:b.left,right:b.right,top:b.top+cur,bottom:b.bottom+cur};   // ずらす前の位置
       let best=null;
-      const maxK=annPrio(anns[i].text)<=2?20:7;   // 計算値・D 以外は元の位置から3段まで。それ以上は隠す
+      const maxK=PR(i)<=2?20:7;   // 計算値・D 以外は元の位置から3段まで。それ以上は隠す
       for(let k=0;k<maxK;k++){const dy=(k%2?1:-1)*Math.ceil(k/2)*(h+pad); const r={...base,top:base.top+dy,bottom:base.bottom+dy}; if(!hit(r)&&(inside(r)||!inside(base))){best=dy;break}}
-      const vis=best!==null||annPrio(anns[i].text)<=2;   // 置き場所がなければ優先度の低い注釈は隠す（計算値・D は必ず残す）
+      const vis=best!==null||PR(i)<=2;   // 置き場所がなければ優先度の低い注釈は隠す（計算値・D は必ず残す）
       if(best===null) best=0;
       if(vis) placed.push({...base,top:base.top+best,bottom:base.bottom+best});
       if(-best!==cur) upd[`annotations[${i}].yshift`]=-best;
@@ -402,7 +411,7 @@ function drawCalcBox(F,w,pend){ const el=$('#calcbox'); if(!w){el.innerHTML='';r
     <table><tr><th>種類</th><th>式</th><th class="num">計算値</th><th class="num">現値比</th><th>達成</th></tr>`+
     ['E','N','V','NT'].map(k=>`<tr><td><b style="color:${cc[k]}">${k}</b></td><td class="muted">${form[k]} = ${f(k==='N'||k==='NT'?c:b)} ${sg} ${fmt(Math.abs(k==='V'?b-c:k==='NT'?c-a:b-a))}</td><td class="num"><b>${f(calc[k])}</b></td><td class="num">${((rp(calc[k])/rp(close)-1)*100).toFixed(1)}%</td><td>${rp(calc[k])<=0?'<span class="ng">0 以下（対象外）</span>':pend?'<span class="muted">—</span>':ach[k]?'<span class="ok">達成</span>':'未達'}</td></tr>`).join('')+'</table></div>'}
 function updRecalc(){const on=!!(PEND&&ABC&&PEND.key===ABC.key); $('#recalc').disabled=!on;
-  $('#recalcnote').textContent=on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?(TOUCH()?'A・B・C の丸を指で押したまま動かすと ▲▼ に吸着します':'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。上げ／下げは A→B の向きで自動判定'):'')}
+  $('#recalcnote').textContent=tr(on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?(TOUCH()?'A・B・C の丸を指で押したまま動かすと ▲▼ に吸着します':'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。上げ／下げは A→B の向きで自動判定'):''))}
 const TOUCH=()=>window.matchMedia('(pointer: coarse)').matches, NARROW=()=>window.innerWidth<=700;
 function setupDrag(gd){
   if(gd._abcDrag) return; gd._abcDrag=true;
@@ -446,7 +455,7 @@ async function recalc(){
   const [a,b,c]=PEND.full, F=ABC.F, kinds=PEND.kind.join('');
   if(!(a<b&&b<c)){st('A → B → C の順（A が最も古い）に並ぶように置いてください',true); return}
   $('#recalc').disabled=true; st('指定した A・B・C で計算値・D・変化日を計算中…');
-  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&kinds=${kinds}`);
+  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent(APICODE())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&kinds=${kinds}`);
     const j=await r.json(); if(!r.ok) throw new Error(j.detail);
     PEND=null; F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); saveManual(FRAME,j.wave); $('#clearabc').style.display='inline-block'; SEL_WAVE=0; drawChart(F); drawSide(F);
     const warn=j.wave.note&&j.wave.note.includes('注意');
@@ -485,7 +494,7 @@ async function ensureManual(fk){
     if(FRAME===fk){SEL_WAVE=0; drawChart(F); drawSide(F)} return }
   F._msig=sig;
   const kinds=fk.endsWith('_inv')?swapK(sv.kinds):sv.kinds;
-  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent($('#code').value.trim()||DATA.input||DATA.name)}&frame=${fk}&period=${$('#period').value}&dates=${encodeURIComponent(sv.dates.join(','))}&kinds=${kinds}`);
+  try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent(APICODE())}&frame=${fk}&period=${$('#period').value}&dates=${encodeURIComponent(sv.dates.join(','))}&kinds=${kinds}`);
     const j=await r.json(); if(!r.ok) throw new Error(j.detail);
     F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual));
     if(FRAME===fk||(!DATA.frames[FRAME]&&base===fk)){SEL_WAVE=0; PEND=null; drawChart(F); drawSide(F)}
@@ -542,7 +551,7 @@ function drawSide(F){
     `<table><tr><th></th><th>向き</th><th>起点 A</th><th>B / C</th><th class="num">時間</th><th>計算値（達成）</th><th>D 予測日</th></tr>`+
     F.waves.slice(0,12).map((w,i)=>`<tr class="wv${i===SEL_WAVE?' sel':''}" data-i="${i}" style="cursor:pointer"><td>${i===SEL_WAVE?'▶':''}</td><td>${w.manual?'<span class="tag" style="background:#b03a2e;color:#fff">手動</span><br>':w.tag?'<span class="tag" style="background:#8a5a1e;color:#fff">定型</span><br>':''}${w.dir==='up'?'上げ':'下げ'}${w.tag&&!w.manual?`<div class="muted" style="font-size:10.5px;max-width:110px">${w.tag.replace(/^定型/,'')}</div>`:''}</td><td><b>${w.A[0]}</b><br>${fmt(w.A[1])} ${'★'.repeat(w.A_rank||1)}</td><td class="muted">B ${w.B[0]} ${fmt(w.B[1])}<br>C ${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${w.d_info.map(d=>`${d.rel}: ${d.date||'-'}${d.offset>=0?` (+${d.offset}${u})`:''}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
-  if(FRAME.startsWith('daily')){ const M=DATA.margin;
+  if(FRAME.startsWith('daily')&&!(DATA.margin&&DATA.margin.skip)){ const M=DATA.margin;
     h+=`<h2>信用残の推移（週次・直近約1か月。長い推移はチャート下段）</h2>`;
     if(!M||M.error){h+=`<div class="muted">取得できませんでした${M&&M.error?'：'+M.error:''}</div>`}
     else{const rows=M.rows.slice(-5); const last=rows[rows.length-1], first=rows[0];
@@ -552,13 +561,13 @@ function drawSide(F){
         rows.map(r=>`<tr><td>${r.date}</td><td class="num">${fmt(r.buy)}</td><td class="num ${r.buy_chg>0?'ng':'ok'}">${r.buy_chg==null?'-':(r.buy_chg>0?'+':'')+fmt(r.buy_chg)}</td><td class="num">${fmt(r.sell)}</td><td class="num">${r.sell_chg==null?'-':(r.sell_chg>0?'+':'')+fmt(r.sell_chg)}</td><td class="num">${r.ratio??'-'}</td></tr>`).join('')+'</table>';
       h+=`<div id="marginchart" style="height:160px;margin-top:6px"></div>`;
       setTimeout(()=>{ if(!$('#marginchart')) return; Plotly.newPlot('marginchart',[
-        {x:rows.map(r=>r.date),y:rows.map(r=>r.buy),type:'bar',name:'買い残',marker:{color:'#c0392b'}},
-        {x:rows.map(r=>r.date),y:rows.map(r=>r.sell),type:'bar',name:'売り残',marker:{color:'#1f5f8b'}},
-        {x:rows.map(r=>r.date),y:rows.map(r=>r.ratio),type:'scatter',name:'倍率',yaxis:'y2',line:{color:'#8a5a1e'},mode:'lines+markers'}],
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.buy),type:'bar',name:tr('買い残'),marker:{color:'#c0392b'}},
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.sell),type:'bar',name:tr('売り残'),marker:{color:'#1f5f8b'}},
+        {x:rows.map(r=>r.date),y:rows.map(r=>r.ratio),type:'scatter',name:tr('倍率'),yaxis:'y2',line:{color:'#8a5a1e'},mode:'lines+markers'}],
         {margin:{l:50,r:40,t:5,b:30},barmode:'group',yaxis:{tickformat:',.0f'},yaxis2:{overlaying:'y',side:'right',title:'倍率'},legend:{orientation:'h',y:1.2,font:{size:10}},paper_bgcolor:'#fff',plot_bgcolor:'#fff',xaxis:{type:'category'}},{displaylogo:false,responsive:true})},0);
       if(M.source&&M.source!=='synthetic') h+=`<div class="muted">出所: ${M.source}</div>`}}
   h+=`<details><summary>テキストレポート全文（注記付き）</summary><div class="md">${mdToHtml(F.markdown)}</div></details>`;
-  $('#side').innerHTML=h;
+  $('#side').innerHTML=h; trDom($('#side'));
   $('#side').querySelectorAll('tr.wv').forEach(r=>r.onclick=()=>{SEL_WAVE=+r.dataset.i; PEND=null; drawChart(F); drawSide(F)});
   $('#side').querySelectorAll('tr.lv').forEach(r=>r.onclick=()=>{const p=+r.dataset.p; SEL_LEVEL=SEL_LEVEL===p?null:p; drawChart(F); $('#side').querySelectorAll('tr.lv').forEach(x=>x.classList.toggle('sel',+x.dataset.p===SEL_LEVEL))});
 }
@@ -579,6 +588,12 @@ function mdToHtml(src){
   }
   closeList(); return out.join('\n');
 }
+
+// ---- 言語・市場・解説リンクの初期化
+document.documentElement.lang=LANG; $('#lang').value=LANG; $('#guidelink').href='/guide?lang='+LANG;
+$('#lang').onchange=e=>{try{localStorage.setItem('lang',e.target.value)}catch(_){} location.reload()};
+trDom(document.body);
+try{const c=sessionStorage.getItem('lastcode'), m=sessionStorage.getItem('lastmarket'); if(m) $('#market').value=m; if(c){$('#code').value=c; run()}}catch(e){}
 </script>
 </body>
 </html>

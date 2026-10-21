@@ -24,9 +24,37 @@ def normalize_symbol(code: str) -> str:
         return f"{c.upper()}.T"
     if re.fullmatch(r"[0-9][0-9A-Za-z]{3}\.T", c, flags=re.I):
         return c.upper()
-    if re.fullmatch(r"[A-Za-z]{6}", c) and c.upper() in {"USDJPY", "EURUSD", "EURJPY", "GBPJPY", "AUDJPY"}:
+    if re.fullmatch(r"[A-Za-z]{6}", c) and c.upper() in {"USDJPY", "EURUSD", "EURJPY", "GBPJPY", "AUDJPY", "USDVND"}:
         return f"{c.upper()}=X"
+    # ベトナム株: "VN:FPT" / "FPT.VN"、指数 VNINDEX
+    m = re.fullmatch(r"(?i)vn[:：]\s*([A-Za-z0-9]{1,10})", c)
+    if m:
+        c = m.group(1).upper() + ".VN"
+    if c.upper() in ("VNINDEX", "VN-INDEX", "VNINDEX.VN", "^VNINDEX"):
+        return "^VNINDEX.VN"
+    if re.fullmatch(r"(?i)[A-Z0-9]{1,10}\.VN", c):
+        return c.upper()
+    # 米国株: 英字ティッカー（BRK.B / BRK-B も可）
+    if re.fullmatch(r"[A-Za-z]{1,5}([.\-][A-Za-z])?", c):
+        return c.upper().replace(".", "-")
     return c
+
+
+def market_of(sym: str) -> str:
+    """'jp' / 'us' / 'vn' / 'other'（為替・指数など）。"""
+    s = sym.upper()
+    if s.endswith(".T") or s == "^N225":
+        return "jp"
+    if s.endswith(".VN"):
+        return "vn"
+    if s.endswith("=X"):
+        return "other"
+    if re.fullmatch(r"\^?[A-Z][A-Z\-]{0,6}", s):
+        return "us"
+    return "other"
+
+
+MARKET_TZ = {"jp": "Asia/Tokyo", "vn": "Asia/Ho_Chi_Minh", "us": "America/New_York", "other": "Asia/Tokyo"}
 
 
 def fetch(code: str, period: str = "5y", interval: str = "1d") -> pd.DataFrame:
@@ -37,6 +65,12 @@ def fetch(code: str, period: str = "5y", interval: str = "1d") -> pd.DataFrame:
         return _fetch_yf(sym, period, interval)
     except Exception as e:  # noqa: BLE001
         errors.append(f"yfinance: {e}")
+    if market_of(sym) == "vn":
+        try:
+            return _fetch_vndirect(sym, period)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"VNDirect: {e}")
+        raise RuntimeError(f"{sym}: データを取得できませんでした（" + " / ".join(errors) + "）")
     try:
         return _fetch_stooq(sym, period)
     except Exception as e:  # noqa: BLE001
@@ -50,11 +84,11 @@ INTRADAY_PERIOD = {"5m": "59d", "15m": "59d", "30m": "59d", "1h": "729d"}
 def fetch_intraday(code: str, interval: str = "5m") -> pd.DataFrame:
     """分足・時間足（yfinance のみ。5m は直近約60日、1h は約2年が上限）。時刻は日本時間に変換。"""
     sym = normalize_symbol(code)
-    df = _fetch_yf(sym, INTRADAY_PERIOD.get(interval, "59d"), interval, keep_tz=True)
+    df = _fetch_yf(sym, INTRADAY_PERIOD.get(interval, "59d"), interval, keep_tz=MARKET_TZ.get(market_of(sym), "Asia/Tokyo"))
     return df
 
 
-def _fetch_yf(sym: str, period: str, interval: str, keep_tz: bool = False) -> pd.DataFrame:
+def _fetch_yf(sym: str, period: str, interval: str, keep_tz: bool | str = False) -> pd.DataFrame:
     import yfinance as yf  # 遅延 import
 
     df = yf.download(sym, period=period, interval=interval, progress=False, auto_adjust=False, threads=False)
@@ -65,12 +99,38 @@ def _fetch_yf(sym: str, period: str, interval: str, keep_tz: bool = False) -> pd
     df = df[REQUIRED + (["Volume"] if "Volume" in df.columns else [])].copy()
     idx = pd.to_datetime(df.index)
     if keep_tz and idx.tz is not None:
-        idx = idx.tz_convert("Asia/Tokyo").tz_localize(None)
+        idx = idx.tz_convert(keep_tz if isinstance(keep_tz, str) else "Asia/Tokyo").tz_localize(None)   # 市場の現地時刻
     elif idx.tz is not None:
         idx = idx.tz_localize(None)
     df.index = idx
     df.index.name = "Date"
     return _clean(df)
+
+
+def _fetch_vndirect(sym: str, period: str) -> pd.DataFrame:
+    """ベトナム株の予備: VNDirect の公開 API（株価は千ドン単位で返るので 1000 倍してドンに揃える）。"""
+    import json
+    import urllib.request
+    code = "VNINDEX" if sym.upper().startswith("^VNINDEX") else sym.upper().replace(".VN", "")
+    years = {"6mo": 1, "1y": 1, "2y": 2, "3y": 3, "5y": 5, "6y": 6, "10y": 10}.get(period, 6)
+    since = (pd.Timestamp.today() - pd.DateOffset(years=years)).strftime("%Y-%m-%d")
+    url = (f"https://finfo-api.vndirect.com.vn/v4/stock_prices?sort=date&q=code:{code}~date:gte:{since}"
+           f"&size=3000&page=1")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        js = json.loads(r.read().decode("utf-8", "replace"))
+    rows = js.get("data") or []
+    if len(rows) < 30:
+        raise RuntimeError("データなし")
+    df = pd.DataFrame(rows)
+    mult = 1.0 if code == "VNINDEX" else 1000.0
+    pick = lambda a, b: df[a] if a in df.columns else df[b]
+    out = pd.DataFrame({"Open": pick("adOpen", "open").astype(float) * mult, "High": pick("adHigh", "high").astype(float) * mult,
+                        "Low": pick("adLow", "low").astype(float) * mult, "Close": pick("adClose", "close").astype(float) * mult,
+                        "Volume": pick("nmVolume", "volume").astype(float)},
+                       index=pd.to_datetime(df["date"]))
+    out.index.name = "Date"
+    return _clean(out)
 
 
 def _stooq_symbol(sym: str) -> str:
@@ -80,6 +140,8 @@ def _stooq_symbol(sym: str) -> str:
         return "^nkx"
     if sym.endswith("=X"):
         return sym[:-2].lower()
+    if market_of(sym) == "us" and not sym.startswith("^"):
+        return sym.lower() + ".us"
     return sym.lower()
 
 
