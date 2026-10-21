@@ -333,7 +333,7 @@ const R=[ // [日本語, English, Tiếng Việt]
 ["/ 下","/ lower","/ dưới"],
 ["3日足","3-day bar","Nến 3 ngày"],
 ["3本足","3-bar","Nến 3 cây"],
-["5分足","5-min","5 phút"],
+["5分足","5-min","5 phút"],["1分足","1-min","1 phút"],
 ["6か月","6 months","6 tháng"],
 ["9日足","9-day bar","Nến 9 ngày"],
 ["9本足","9-bar","Nến 9 cây"],

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from . import lines, levels as lv, nbars, numbers, swings, waves
+from .numbers import _dt
 
 
 @dataclass
@@ -35,7 +36,7 @@ class AnalysisResult:
         last = df.index[-1]
         c = df["Close"].iloc[-1]
         u = self.unit
-        md = [f"## {self.label}（最終足 {last.date()}  終値 {c:,.1f}）", ""]
+        md = [f"## {self.label}（最終足 {_dt(last)}  終値 {c:,.1f}）", ""]
         md += ["### 0. 総合所見（暫定判断と検証条件）"] + [f"- {x}" for x in self.verdict()] + [""]
 
         # 直観的判断
@@ -63,22 +64,22 @@ class AnalysisResult:
         recent_ev = [e for e in self.events if (last - e["date"]).days <= 45 * (1 if u == '日' else 7 if u == '週' else 30)]
         if recent_ev:
             md.append("- 直近の各線の働き: " + "、".join(
-                f"{e['date'].date()} {lv._jp(e['line'])}{e['kind']}" for e in recent_ev[-6:]))
+                f"{_dt(e['date'])} {lv._jp(e['line'])}{e['kind']}" for e in recent_ev[-6:]))
         md.append("")
 
         # 波形
         md.append("### 2. 直近の波形と三波動構成")
         if self.waveform:
             w = self.waveform
-            md.append(f"- 直近4極 A{w['A'].kind}{w['A'].date.date()} {w['A'].price:,.1f} → B {w['B'].price:,.1f} → "
+            md.append(f"- 直近4極 A{w['A'].kind}{_dt(w['A'].date)} {w['A'].price:,.1f} → B {w['B'].price:,.1f} → "
                       f"C {w['C'].price:,.1f} → D {w['D'].price:,.1f}（{w['times'][0]}{u}・{w['times'][1]}{u}・{w['times'][2]}{u}）: **{w['form']}**")
             if "中間波動" in w["form"]:
                 md.append("  - 中間波動＝原則もみ合いとして認識（転換をも示唆）。放れの方向を相場水準からの基本数値で確認する")
         good = [w for w in self.waves if "不成立" not in w.note]
         for w in good[:6]:
             ach = "・".join(k for k, v in w.achieved.items() if v) or "未達"
-            md.append(f"- {'上げ' if w.direction=='up' else '下げ'}三波動 A {w.A.date.date()} {w.A.price:,.1f} / B {w.B.date.date()} {w.B.price:,.1f} / "
-                      f"C {w.C.date.date()} {w.C.price:,.1f}  時間 AB={w.ab} BC={w.bc} AC={w.ac}{u}  "
+            md.append(f"- {'上げ' if w.direction=='up' else '下げ'}三波動 A {_dt(w.A.date)} {w.A.price:,.1f} / B {_dt(w.B.date)} {w.B.price:,.1f} / "
+                      f"C {_dt(w.C.date)} {w.C.price:,.1f}  時間 AB={w.ab} BC={w.bc} AC={w.ac}{u}  "
                       f"計算値 E {w.calc['E']:,.1f} N {w.calc['N']:,.1f} V {w.calc['V']:,.1f} NT {w.calc['NT']:,.1f}  達成: {ach}")
         if self.p_value:
             p = self.p_value
@@ -97,7 +98,7 @@ class AnalysisResult:
         md.append("**相場水準候補（起点からの基本数値の現れ方で評価）**")
         for l in self.levels[:max_levels]:
             hits = "、".join(f"{h['n']}{u}目{h['what']}" for h in l.hits[:6])
-            md.append(f"- {l.price:,.1f}（{(l.price/c-1)*100:+.1f}%） {l.source.split(' / ')[0]}  起点 {l.origin.date()}  "
+            md.append(f"- {l.price:,.1f}（{(l.price/c-1)*100:+.1f}%） {l.source.split(' / ')[0]}  起点 {_dt(l.origin)}  "
                       f"[{hits or '—'}]  もみ合い限界: 上 {l.upper_limit:,.1f} / 下 {l.lower_limit:,.1f}")
         md.append("")
 
@@ -108,7 +109,7 @@ class AnalysisResult:
         for cl in self.change_clusters[:max_dates]:
             when = cl["i_min"] - (n_bars - 1)
             tag = f"{when:+d}{u}" if when != 0 else "本日"
-            md.append(f"- **{cl['date'].date()}**（{tag}）スコア {cl['score']:.1f}、根拠 {cl['n_sources']} 件 [{'/'.join(cl['kinds'])}]")
+            md.append(f"- **{_dt(cl['date'])}**（{tag}）スコア {cl['score']:.1f}、根拠 {cl['n_sources']} 件 [{'/'.join(cl['kinds'])}]")
             for it in cl["items"][:4]:
                 md.append(f"    - {it.detail}")
             if len(cl["items"]) > 4:
@@ -123,7 +124,7 @@ class AnalysisResult:
                 if not cur:
                     continue
                 hist = " ".join(f"{h['sign']}{h['len']}" for h in s["history"])
-                line = f"- **{s['label']}**: 現在 {cur['sign']}{cur['len']}連（{cur['start'].date()}〜）  履歴: {hist}"
+                line = f"- **{s['label']}**: 現在 {cur['sign']}{cur['len']}連（{_dt(cur['start'])}〜）  履歴: {hist}"
                 if s["previous_opposite"]:
                     po = s["previous_opposite"]
                     line += f"  ← 直前の{po['sign']}{po['len']}連に対する対等 {po['len']} 本目に注目"
@@ -174,8 +175,8 @@ class AnalysisResult:
         nxt.sort(key=lambda x: x["i_min"])
         if nxt:
             top = max(nxt[:6], key=lambda x: x["score"])
-            out.append(f"次の変化日候補: {nxt[0]['date'].date()}（{nxt[0]['i_min']-(n-1):+d}{u}）、"
-                       f"重なりが最も厚いのは {top['date'].date()}（スコア {top['score']:.1f}）。その日に高値・安値となるか、反応がないかを確認")
+            out.append(f"次の変化日候補: {_dt(nxt[0]['date'])}（{nxt[0]['i_min']-(n-1):+d}{u}）、"
+                       f"重なりが最も厚いのは {_dt(top['date'])}（スコア {top['score']:.1f}）。その日に高値・安値となるか、反応がないかを確認")
         up = [x for x in self.calc_clusters if x["price"] > c and not x["achieved"]]
         dn = [x for x in self.calc_clusters if x["price"] < c and not x["achieved"]]
         if up:
@@ -190,7 +191,7 @@ class AnalysisResult:
                    + ("転換線・基準線を割れば「もみ合いか転換か」をまず考える" if c > kj else "転換線・基準線を上抜くまで上げを急いで買う理由はない"))
         if self.levels:
             lv0 = self.levels[0]
-            out.append(f"最有力の相場水準: {lv0.price:,.1f}（{lv0.source.split(' / ')[0]}、起点 {lv0.origin.date()}）。"
+            out.append(f"最有力の相場水準: {lv0.price:,.1f}（{lv0.source.split(' / ')[0]}、起点 {_dt(lv0.origin)}）。"
                        f"この水準×2−極値 ＝ もみ合い限界 上 {lv0.upper_limit:,.1f} / 下 {lv0.lower_limit:,.1f}")
         return out
 
@@ -217,7 +218,7 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
     pv = waves.p_value(pivs)
     calc = waves.calc_levels(ws, float(df["Close"].iloc[-1]))
     # 半値水準の期間には定型三波動の A〜現在も加える
-    lvs = lv.find_levels(df, L, pivs, ranges=[(w.A.i, n - 1, f"定型三波動 A {w.A.date.date()} 以降") for w in rw])
+    lvs = lv.find_levels(df, L, pivs, ranges=[(w.A.i, n - 1, f"定型三波動 A {_dt(w.A.date)} 以降") for w in rw])
     # 定型三波動の A・B・C からの基本数値／対等数値（重要な高値・安値からの基本数値・対等数値で変化日を定める）
     rule_pts, seen_pt = [], set()
     for w in rw:
@@ -235,7 +236,7 @@ def analyze(df: pd.DataFrame, label: str = "日足", unit: str = "日", horizon:
             j = base.i + length - 1
             if n - 3 <= j < n + horizon:
                 rule_cands.append(numbers.ChangeDate(j, index_ext[j], "equal", length, base.date, base.kind,
-                    f"【定型】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{base.date.date()} から", 2.0))
+                    f"【定型】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{_dt(base.date)} から", 2.0))
     # 定型三波動の AC=CD の日を起点にした基本数値日
     rule_cands += waves.d_origin_change_dates(rw, index_ext, n, horizon, unit=unit, prefix="【定型】", mult=1.5)
     cands = (rule_cands + numbers.basic_change_dates(pivs[-10:], index_ext, n, horizon, unit=unit)
@@ -292,13 +293,13 @@ def manual_wave(res: AnalysisResult, a_i: int, b_i: int, c_i: int, direction: st
         j = base.i + length - 1
         if n - 3 <= j < n + horizon:
             cands.append(numbers.ChangeDate(j, index_ext[j], "equal", length, base.date, base.kind,
-                f"【手動】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{base.date.date()} から", 2.0))
+                f"【手動】対等数値: {lab} {length}{unit} を {'高値' if base.kind=='H' else '安値'}{_dt(base.date)} から", 2.0))
     for c in waves.wave_change_dates([w], index_ext, n, horizon, unit=unit):
         c.detail = c.detail.replace("【定型】", "【手動】")
         cands.append(c)
     cands += waves.d_origin_change_dates([w], index_ext, n, horizon, unit=unit, prefix="【手動】", mult=1.8)
     # 手動 A 以降の高値・安値の半値水準（A から過去へさかのぼって最初に半値を付けた日を起点）
-    half = lv.half_level(df, A.i, n - 1, f"手動 A {A.date.date()} 以降")
+    half = lv.half_level(df, A.i, n - 1, f"手動 A {_dt(A.date)} 以降")
     if half is not None:
         lv._evaluate(half, df, res.pivots)
         for c in lv.level_change_dates([half], index_ext, n, horizon, unit=unit):

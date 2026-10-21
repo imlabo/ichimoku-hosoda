@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from .numbers import _dt
+
 from .numbers import ChangeDate, nearest_basic
 from .swings import Pivot, bars_between
 
@@ -282,8 +284,8 @@ def wave_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bars: i
                 extra = f"、A〜D {bars_between(w.A.i, j)}{unit}≒基本数値{nb[0]}" if nb else ""
                 out.append(ChangeDate(j, index_ext[j], "wave", j - (w.B.i if rel == "AB=BD" else w.C.i) + 1,
                                       w.C.date, w.C.kind,
-                                      f"{'【定型】' if w.tag else ''}{'上げ' if w.direction=='up' else '下げ'}三波動 A{w.A.date.date()} B{w.B.date.date()} "
-                                      f"C{w.C.date.date()} の {rel}（{w.ab if rel!='AC=CD' else w.ac}{unit}）{extra}",
+                                      f"{'【定型】' if w.tag else ''}{'上げ' if w.direction=='up' else '下げ'}三波動 A{_dt(w.A.date)} B{_dt(w.B.date)} "
+                                      f"C{_dt(w.C.date)} の {rel}（{w.ab if rel!='AC=CD' else w.ac}{unit}）{extra}",
                                       (1.2 + 0.15 * (w.A.rank + w.C.rank) + (0.5 if nb else 0)) * (2.0 if w.tag else 1.0)))
     return out
 
@@ -373,6 +375,6 @@ def d_origin_change_dates(waves: list[Wave3], index_ext: pd.DatetimeIndex, n_bar
                 continue
             wt = {"core": 1.0, "sub": 0.6, "plus100": 0.5, "small": 0.3}[cat] * 1.3 * mult
             out.append(ChangeDate(j, index_ext[j], "dbasic", b, index_ext[j0], "D",
-                                  f"{prefix}{'上げ' if w.direction == 'up' else '下げ'}三波動の {rel}（{index_ext[j0].date()}）から {b}{unit}目"
+                                  f"{prefix}{'上げ' if w.direction == 'up' else '下げ'}三波動の {rel}（{_dt(index_ext[j0])}）から {b}{unit}目"
                                   f"{'（' + NAMES[b] + '）' if b in NAMES else ''}", wt))
     return out

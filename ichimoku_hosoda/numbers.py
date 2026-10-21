@@ -16,6 +16,12 @@ SUB = [47, 67, 13, 37, 55, 21, 133, 142, 151, 165, 183, 247, 676]
 PLUS100 = [100 + n for n in (9, 17, 26, 33, 42, 47, 51, 65, 67, 76, 83, 97)]
 SMALL = [3, 5, 7]
 
+def _dt(ts) -> str:
+    """日付表示。分足・時間足（時刻あり）は「MM-DD HH:MM」、日足以上は「YYYY-MM-DD」。"""
+    t = pd.Timestamp(ts)
+    return t.strftime("%m-%d %H:%M") if (t.hour or t.minute) else t.strftime("%Y-%m-%d")
+
+
 NAMES = {9: "一節", 26: "一期", 76: "一巡", 226: "一環", 676: "一巡環"}
 
 
@@ -80,7 +86,7 @@ def basic_change_dates(pivs, index_ext: pd.DatetimeIndex, n_bars: int, horizon: 
             if n_bars - 3 <= j < n_bars + horizon:
                 w = {"core": 1.0, "sub": 0.6, "plus100": 0.5, "small": 0.3}[cat] * (0.6 + 0.2 * p.rank)
                 out.append(ChangeDate(j, index_ext[j], "basic", b, p.date, p.kind,
-                                      f"{'高値' if p.kind=='H' else '安値'}{p.date.date()} から {b}{unit}目{'（'+NAMES[b]+'）' if b in NAMES else ''}", w))
+                                      f"{'高値' if p.kind=='H' else '安値'}{_dt(p.date)} から {b}{unit}目{'（'+NAMES[b]+'）' if b in NAMES else ''}", w))
     return out
 
 
@@ -97,8 +103,8 @@ def equal_change_dates(pivs, index_ext: pd.DatetimeIndex, n_bars: int, horizon: 
             j = center.i + n - 1
             if n >= 3 and n_bars - 3 <= j < n_bars + horizon:
                 out.append(ChangeDate(j, index_ext[j], "equal", n, center.date, center.kind,
-                                      f"対等数値: {_k(prev)}{prev.date.date()}→{_k(center)}{center.date.date()} の {n}{unit}に対し "
-                                      f"{_k(center)}{center.date.date()} から {n}{unit}目", 0.8 + 0.1 * center.rank))
+                                      f"対等数値: {_k(prev)}{_dt(prev.date)}→{_k(center)}{_dt(center.date)} の {n}{unit}に対し "
+                                      f"{_k(center)}{_dt(center.date)} から {n}{unit}目", 0.8 + 0.1 * center.rank))
     return out
 
 

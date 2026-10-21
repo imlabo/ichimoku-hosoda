@@ -163,9 +163,9 @@ $('#csv').addEventListener('change',async e=>{
 });
 
 function render(){
-  const names={m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足'};
+  const names={m1:'1分足',m5:'5分足',h1:'1時間足',daily:'日足',weekly:'週足',monthly:'月足'};
   const base=FRAME.replace(/_inv$/,'');
-  const order=['m5','h1','daily','weekly','monthly'].filter(k=>DATA.frames[k]);
+  const order=['m1','m5','h1','daily','weekly','monthly'].filter(k=>DATA.frames[k]);
   $('#tabs').innerHTML=order.map(k=>`<button class="${k===base?'on':''}" data-k="${k}">${names[k]}</button>`).join('')+
     `<label style="align-self:center;margin-left:14px;font-size:12px;cursor:pointer;${INV?'color:#1f5f8b;font-weight:600':''}"><input type="checkbox" id="invtoggle" ${INV?'checked':''}> 上下反転</label>`+
     (DATA.notes&&DATA.notes.length?`<span class="muted" style="align-self:center;margin-left:10px">${DATA.notes.join('、')}</span>`:'');

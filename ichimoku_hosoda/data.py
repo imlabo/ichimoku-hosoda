@@ -78,11 +78,11 @@ def fetch(code: str, period: str = "5y", interval: str = "1d") -> pd.DataFrame:
     raise RuntimeError(f"{sym}: データを取得できませんでした（" + " / ".join(errors) + "）")
 
 
-INTRADAY_PERIOD = {"5m": "59d", "15m": "59d", "30m": "59d", "1h": "729d"}
+INTRADAY_PERIOD = {"1m": "7d", "5m": "59d", "15m": "59d", "30m": "59d", "1h": "729d"}
 
 
 def fetch_intraday(code: str, interval: str = "5m") -> pd.DataFrame:
-    """分足・時間足（yfinance のみ。5m は直近約60日、1h は約2年が上限）。時刻は日本時間に変換。"""
+    """分足・時間足（yfinance のみ。1m は直近7日、5m は直近約60日、1h は約2年が上限）。時刻は日本時間に変換。"""
     sym = normalize_symbol(code)
     df = _fetch_yf(sym, INTRADAY_PERIOD.get(interval, "59d"), interval, keep_tz=MARKET_TZ.get(market_of(sym), "Asia/Tokyo"))
     return df
@@ -239,8 +239,8 @@ def synthetic(n: int = 1300, seed: int = 7, start: str = "2021-01-04", s0: float
 def synthetic_intraday(interval: str = "5m", seed: int = 11) -> pd.DataFrame:
     """動作確認用の擬似分足（東証の立会時間 9:00-11:30 / 12:30-15:30 を模す）。"""
     rng = np.random.default_rng(seed)
-    step = 5 if interval == "5m" else 60
-    days = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=40 if interval == "5m" else 300)
+    step = {"1m": 1, "5m": 5}.get(interval, 60)
+    days = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods={1: 5, 5: 40}.get(step, 300))
     times = []
     for d in days:
         for h, m in [(9, 0), (11, 30), (12, 30), (15, 30)][:0]:
@@ -251,7 +251,7 @@ def synthetic_intraday(interval: str = "5m", seed: int = 11) -> pd.DataFrame:
                 times.append(t)
             t += pd.Timedelta(minutes=step)
     n = len(times)
-    rets = rng.normal(0, 0.0015 if step == 5 else 0.004, n) + np.sin(np.arange(n) / (76 if step == 5 else 26)) * 0.0006
+    rets = rng.normal(0, {1: 0.0007, 5: 0.0015}.get(step, 0.004), n) + np.sin(np.arange(n) / {1: 120, 5: 76}.get(step, 26)) * 0.0006
     close = 1800 * np.exp(np.cumsum(rets))
     opn = np.r_[close[0], close[:-1]]
     hi = np.maximum(close, opn) * (1 + np.abs(rng.normal(0, 0.0008, n)))

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from . import numbers, waves as wavemod
+from .numbers import _dt
 from .lines import KIJUN, SHIFT, TENKAN
 
 
@@ -151,7 +152,7 @@ def conditions(res, proj: pd.DataFrame, prep: dict | None) -> list[str]:
         return []
     top = max(nxt[:5], key=lambda x: x["score"])
     k = int(top["i_min"] - (n - 1))
-    d = top["date"].date()
+    d = _dt(top["date"])
     row = proj.loc[min(k, len(proj))] if k >= 1 else proj.loc[1]
     tk, kj = float(row["tenkan"]), float(row["kijun"])
     j = n - 1 + k
@@ -180,16 +181,16 @@ def conditions(res, proj: pd.DataFrame, prep: dict | None) -> list[str]:
     if prep and prep.get("status") == "failed":
         side = "安値" if prep["side"] == "bottom" else "高値"
         b = prep["broke"]
-        out.append(f"準備構成の失敗：{side} {prep['price']:,.1f}（{prep['date'].date()}）を {b['n']}{u}目（{b['date'].date()}）に"
+        out.append(f"準備構成の失敗：{side} {prep['price']:,.1f}（{_dt(prep['date'])}）を {b['n']}{u}目（{_dt(b['date'])}）に"
                    f"{'割り込んだ' if side == '安値' else '上抜いた'}。{'下げ' if side == '安値' else '上げ'}の三波動をより明確に考える")
     if prep and prep.get("status") in ("holding", "early"):
         bottom = prep["side"] == "bottom"
         nn = prep["next"][0] if prep["next"] else None
         if bottom:
-            msg = (f"準備構成（底値固め）：重要な安値 {prep['price']:,.1f}（{prep['date'].date()}）から {prep['elapsed']}{u}目で、まだ割っていない。"
+            msg = (f"準備構成（底値固め）：重要な安値 {prep['price']:,.1f}（{_dt(prep['date'])}）から {prep['elapsed']}{u}目で、まだ割っていない。"
                    + (f"{nn}{u}目まで割らなければ底値固めが続く。その後、間を置かずに均衡表が好転すれば中間波動からの上放れ。割れば準備構成の失敗（下げの三波動を考える）" if nn else ""))
         else:
-            msg = (f"準備構成（天井固め）：重要な高値 {prep['price']:,.1f}（{prep['date'].date()}）から {prep['elapsed']}{u}目で、まだ超えていない。"
+            msg = (f"準備構成（天井固め）：重要な高値 {prep['price']:,.1f}（{_dt(prep['date'])}）から {prep['elapsed']}{u}目で、まだ超えていない。"
                    + (f"{nn}{u}目まで超えなければ天井固め（下げの準備構成）が続く。超えれば失敗（上げの三波動を考える）" if nn else ""))
         out.append(msg)
     return out

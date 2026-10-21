@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from .numbers import _dt
+
 from .lines import SHIFT, flat_runs
 from .numbers import ChangeDate, basic_numbers, tolerance
 from .swings import Pivot
@@ -56,7 +58,7 @@ def find_levels(df: pd.DataFrame, L: pd.DataFrame, pivs: list[Pivot], lookback: 
     for t in range(max(start, SHIFT), n):
         ref = t - SHIFT
         if df["Low"].iloc[ref] <= c[t] <= df["High"].iloc[ref]:
-            levels.append(Level(float(c[t]), ref, df.index[ref], f"遅行スパンが実線に触れる（{df.index[t].date()} の終値）"))
+            levels.append(Level(float(c[t]), ref, df.index[ref], f"遅行スパンが実線に触れる（{_dt(df.index[t])} の終値）"))
 
     # ③ 線の交点
     for a, b, label in (("tenkan", "kijun", "転換線×基準線"), ("span_tk", "span_52", "先行スパン同士")):
@@ -190,6 +192,6 @@ def level_change_dates(levels: list[Level], index_ext: pd.DatetimeIndex, n_bars:
             j = lv.origin_i + b - 1
             if n_bars - 3 <= j < n_bars + horizon:
                 out.append(ChangeDate(j, index_ext[j], "level", b, lv.origin, "level",
-                                      f"{'半値水準' if lv.kind == 'half' else '相場水準'} {lv.price:,.1f}（{lv.source.split(' / ')[0] if lv.kind != 'half' else '起点'}）起点 {lv.origin.date()} から {b}{unit}目",
+                                      f"{'半値水準' if lv.kind == 'half' else '相場水準'} {lv.price:,.1f}（{lv.source.split(' / ')[0] if lv.kind != 'half' else '起点'}）起点 {_dt(lv.origin)} から {b}{unit}目",
                                       (0.5 + min(lv.score, 10) / 10) * (1.5 if lv.kind == "half" else 1.0)))
     return out

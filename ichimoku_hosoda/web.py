@@ -145,7 +145,8 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     df = full[full.index >= full.index[-1] - cut] if cut else full
     intra = {}
     if intraday:
-        for key2, interval, label, zz in (("m5", "5m", "5分足", (0.004, 0.008, 0.016, 0.03)),
+        for key2, interval, label, zz in (("m1", "1m", "1分足", (0.002, 0.004, 0.008, 0.016)),
+                                           ("m5", "5m", "5分足", (0.004, 0.008, 0.016, 0.03)),
                                            ("h1", "1h", "1時間足", (0.01, 0.02, 0.04, 0.08))):
             try:
                 idf = data.synthetic_intraday(interval) if demo else data.fetch_intraday(code, interval)
