@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import time
 import datetime as dt
 from pathlib import Path
 
@@ -31,6 +32,7 @@ MIN_TURNOVER = 1e8      # 20日平均売買代金 >= 1億円（薄商い除外�
 MIN_PRICE = 100         # 低位株除外
 EXPIRE_DAYS = 26        # 監視リストから外すまでの日柄
 BASIC_NUMBERS = (9, 17, 26)
+MIN_DATA_RATE = 0.5     # 株価取得率がこれ未満なら「0件」ではなく異常終了させる
 # ---------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent
@@ -57,22 +59,70 @@ def load_universe() -> pd.DataFrame:
     return df[["code", "name", "market"]].reset_index(drop=True)
 
 
-def download(codes: list[str], period: str = "6mo") -> dict[str, pd.DataFrame]:
+def make_session():
+    """ブラウザを装ったセッション。Yahoo が GitHub Actions の IP を弾くのを回避する狙い。"""
+    try:
+        from curl_cffi import requests as cffi_requests
+        s = cffi_requests.Session(impersonate="chrome")
+        print("session: curl_cffi (impersonate=chrome)", file=sys.stderr)
+        return s
+    except Exception as e:
+        print(f"session: curl_cffi 不可（{e}）→ requests にフォールバック", file=sys.stderr)
+        s = requests.Session()
+        s.headers.update({
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        })
+        return s
+
+
+def _yf_download(chunk: list[str], period: str, session):
+    """session 引数を受けない yfinance でも動くように２段構えで呼ぶ。"""
+    kw = dict(period=period, group_by="ticker", threads=True,
+              auto_adjust=False, progress=False)
+    if session is not None:
+        try:
+            return yf.download(chunk, session=session, **kw)
+        except TypeError:
+            pass  # 新しめの yfinance は session を受けない（内部で curl_cffi を使う）
+    return yf.download(chunk, **kw)
+
+
+def download(codes: list[str], period: str = "6mo",
+             chunk_size: int = 100, max_retries: int = 3) -> dict[str, pd.DataFrame]:
     out: dict[str, pd.DataFrame] = {}
+    session = make_session()
     tickers = [f"{c}.T" for c in codes]
-    for i in range(0, len(tickers), 200):
-        chunk = tickers[i:i + 200]
-        data = yf.download(chunk, period=period, group_by="ticker", threads=True,
-                           auto_adjust=False, progress=False)
-        for t in chunk:
+    for i in range(0, len(tickers), chunk_size):
+        chunk = tickers[i:i + chunk_size]
+        got = 0
+        for attempt in range(1, max_retries + 1):
             try:
-                d = data[t] if len(chunk) > 1 else data
-            except KeyError:
-                continue
-            d = d.dropna(subset=["Close", "Volume"])
-            if len(d) >= 60:
-                out[t[:-2]] = d
-        print(f"downloaded {min(i + 200, len(tickers))}/{len(tickers)}", file=sys.stderr)
+                data = _yf_download(chunk, period, session)
+            except Exception as e:
+                print(f"  chunk {i // chunk_size + 1}: 例外 {type(e).__name__}: {e}", file=sys.stderr)
+                data = None
+            if data is not None and len(data):
+                for t in chunk:
+                    try:
+                        d = data[t] if len(chunk) > 1 else data
+                    except KeyError:
+                        continue
+                    d = d.dropna(subset=["Close", "Volume"])
+                    if len(d) >= 60:
+                        out[t[:-2]] = d
+                        got += 1
+            if got:
+                break
+            if attempt < max_retries:
+                wait = 5 * 2 ** (attempt - 1)  # 5s, 10s
+                print(f"  chunk {i // chunk_size + 1}: 取得0件 → {wait}秒待って再試行 "
+                      f"({attempt}/{max_retries})", file=sys.stderr)
+                time.sleep(wait)
+        print(f"downloaded {min(i + chunk_size, len(tickers))}/{len(tickers)} "
+              f"（このチャンク {got}/{len(chunk)} 件・累計 {len(out)} 件）", file=sys.stderr)
     return out
 
 
@@ -156,7 +206,15 @@ def evaluate(code: str, name: str, market: str, d: pd.DataFrame, spike: pd.Times
 
 def screen() -> tuple[list[dict], str]:
     uni = load_universe()
+    print(f"universe: {len(uni)} 銘柄", file=sys.stderr)
     data = download(uni["code"].tolist())
+    rate = len(data) / max(len(uni), 1)
+    print(f"price data: {len(data)}/{len(uni)} 銘柄（{rate:.1%}）", file=sys.stderr)
+    if rate < MIN_DATA_RATE:
+        raise SystemExit(
+            f"株価データの取得率が {rate:.1%}（{len(data)}/{len(uni)}）しかありません。"
+            f"Yahoo 側でブロックされている可能性が高いため、監視リストは更新せず異常終了します。"
+        )
     today = None
     found: list[dict] = []
     for _, row in uni.iterrows():
