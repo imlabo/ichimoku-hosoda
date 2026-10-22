@@ -3,7 +3,7 @@ name: daily-screener
 
 on:
   schedule:
-    - cron: "10 7 * * 1-5"   # 16:10 JST 平日（UTC 07:10）
+    - cron: "30 8 * * 1-5"   # 17:30 JST 平日（UTC 08:30）
   workflow_dispatch:
 
 permissions:
