@@ -33,6 +33,13 @@ MIN_PRICE = 100         # 低位株除外
 EXPIRE_DAYS = 26        # 監視リストから外すまでの日柄
 BASIC_NUMBERS = (9, 17, 26)
 MIN_DATA_RATE = 0.5     # 株価取得率がこれ未満なら「0件」ではなく異常終了させる
+
+# 対象市場。Yahoo の時間あたりリクエスト上限（未認証で約2,000件/時）に収めるため
+# プライムのみ（約1,600銘柄）に限定。広げるなら "スタンダード", "グロース" を追加
+MARKETS = ("プライム",)
+CHUNK_SLEEP = 5             # チャンク間の待ち（秒）
+RATE_LIMIT_WAITS = (60, 180)  # 取得0件のときの待ち（秒）。Yahoo の制限は分単位で解けるため長めに
+TIME_BUDGET_SEC = 25 * 60   # これを超えたら取得を打ち切る（Actions の無料枠を守る）
 # ---------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent
@@ -86,7 +93,7 @@ def load_universe() -> pd.DataFrame:
     c_market = _pick_col(df, "市場", "区分")
     df = df.rename(columns={c_code: "code", c_name: "name", c_market: "market"})
     df["code"] = df["code"].astype(str).str.strip()
-    df = df[df["market"].astype(str).str.contains("プライム|スタンダード|グロース")]
+    df = df[df["market"].astype(str).str.contains("|".join(MARKETS))]
     df = df[df["code"].str.fullmatch(r"[0-9A-Za-z]{4}")]
     return df[["code", "name", "market"]].reset_index(drop=True)
 
@@ -123,18 +130,25 @@ def _yf_download(chunk: list[str], period: str, session):
 
 
 def download(codes: list[str], period: str = "6mo",
-             chunk_size: int = 100, max_retries: int = 3) -> dict[str, pd.DataFrame]:
+             chunk_size: int = 100) -> dict[str, pd.DataFrame]:
     out: dict[str, pd.DataFrame] = {}
     session = make_session()
     tickers = [f"{c}.T" for c in codes]
+    started = time.monotonic()
+    n_chunks = (len(tickers) + chunk_size - 1) // chunk_size
+
     for i in range(0, len(tickers), chunk_size):
+        if time.monotonic() - started > TIME_BUDGET_SEC:
+            print(f"時間切れ（{TIME_BUDGET_SEC // 60}分）で取得を打ち切ります", file=sys.stderr)
+            break
         chunk = tickers[i:i + chunk_size]
+        c_no = i // chunk_size + 1
         got = 0
-        for attempt in range(1, max_retries + 1):
+        for attempt in range(len(RATE_LIMIT_WAITS) + 1):
             try:
                 data = _yf_download(chunk, period, session)
             except Exception as e:
-                print(f"  chunk {i // chunk_size + 1}: 例外 {type(e).__name__}: {e}", file=sys.stderr)
+                print(f"  chunk {c_no}: 例外 {type(e).__name__}: {e}", file=sys.stderr)
                 data = None
             if data is not None and len(data):
                 for t in chunk:
@@ -146,15 +160,16 @@ def download(codes: list[str], period: str = "6mo",
                     if len(d) >= 60:
                         out[t[:-2]] = d
                         got += 1
-            if got:
+            if got or attempt == len(RATE_LIMIT_WAITS):
                 break
-            if attempt < max_retries:
-                wait = 5 * 2 ** (attempt - 1)  # 5s, 10s
-                print(f"  chunk {i // chunk_size + 1}: 取得0件 → {wait}秒待って再試行 "
-                      f"({attempt}/{max_retries})", file=sys.stderr)
-                time.sleep(wait)
+            wait = RATE_LIMIT_WAITS[attempt]
+            print(f"  chunk {c_no}: 取得0件 → {wait}秒待って再試行 "
+                  f"({attempt + 1}/{len(RATE_LIMIT_WAITS)})", file=sys.stderr)
+            time.sleep(wait)
         print(f"downloaded {min(i + chunk_size, len(tickers))}/{len(tickers)} "
-              f"（このチャンク {got}/{len(chunk)} 件・累計 {len(out)} 件）", file=sys.stderr)
+              f"（chunk {c_no}/{n_chunks}: {got}/{len(chunk)} 件・累計 {len(out)} 件）", file=sys.stderr)
+        if CHUNK_SLEEP and i + chunk_size < len(tickers):
+            time.sleep(CHUNK_SLEEP)
     return out
 
 
