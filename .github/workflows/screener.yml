@@ -18,11 +18,26 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests xlrd
-      - run: python screener/screener.py
+
+      # 失敗しても後続で last_run.log を commit したいので continue-on-error
+      - name: run screener
+        id: run
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python -u screener/screener.py 2>&1 | tee screener/last_run.log
+
       - name: commit watchlist
+        if: always()
         run: |
           git config user.name "screener-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add screener/watchlist.json screener/watchlist.md screener/daily
+          git add screener/watchlist.json screener/watchlist.md screener/daily screener/last_run.log
           git diff --cached --quiet || git commit -m "screener: $(date -u +%F)"
           git push
+
+      - name: fail if screener failed
+        if: steps.run.outcome == 'failure'
+        run: |
+          echo "screener が異常終了しました。screener/last_run.log を確認してください。"
+          exit 1
