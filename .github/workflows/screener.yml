@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests xlrd
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd
 
       # 失敗しても後続で last_run.log を commit したいので continue-on-error
       - name: run screener

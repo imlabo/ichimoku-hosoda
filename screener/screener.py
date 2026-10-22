@@ -39,7 +39,22 @@ ROOT = Path(__file__).resolve().parent
 OUT_JSON = ROOT / "watchlist.json"
 OUT_MD = ROOT / "watchlist.md"
 DAILY_DIR = ROOT / "daily"
-JPX_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+# JPX「東証上場銘柄一覧」。2026年に .xls → .xlsx へ変わったため両方試す
+JPX_URLS = [
+    "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
+    "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls",
+]
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
+
+
+def _pick_col(df: pd.DataFrame, *keywords: str) -> str:
+    """列名に keywords のいずれかを含む列を返す（JPX の列名変更に耐えるため）"""
+    for col in df.columns:
+        s = str(col)
+        if any(k in s for k in keywords):
+            return col
+    raise SystemExit(f"JPX 銘柄一覧に {keywords} を含む列が見つかりません。列: {list(df.columns)}")
 
 
 def load_universe() -> pd.DataFrame:
@@ -47,15 +62,32 @@ def load_universe() -> pd.DataFrame:
     txt = ROOT / "tickers.txt"
     if txt.exists():
         codes = [l.strip() for l in txt.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
+        print(f"universe source: {txt.name}（{len(codes)} 銘柄）", file=sys.stderr)
         return pd.DataFrame({"code": codes, "name": codes, "market": ""})
 
-    r = requests.get(JPX_URL, timeout=60)
-    r.raise_for_status()
-    df = pd.read_excel(io.BytesIO(r.content))
-    df = df.rename(columns={"コード": "code", "銘柄名": "name", "市場・商品区分": "market"})
+    df = None
+    last_err: Exception | None = None
+    for url in JPX_URLS:
+        try:
+            r = requests.get(url, timeout=60, headers={"User-Agent": UA})
+            r.raise_for_status()
+            df = pd.read_excel(io.BytesIO(r.content))
+            print(f"universe source: {url}", file=sys.stderr)
+            break
+        except Exception as e:
+            print(f"  {url} → {type(e).__name__}: {e}", file=sys.stderr)
+            last_err = e
+    if df is None:
+        raise SystemExit(f"JPX の銘柄一覧を取得できませんでした: {last_err}")
+
+    print(f"columns: {list(df.columns)}", file=sys.stderr)
+    c_code = _pick_col(df, "コード")
+    c_name = _pick_col(df, "銘柄名")
+    c_market = _pick_col(df, "市場", "区分")
+    df = df.rename(columns={c_code: "code", c_name: "name", c_market: "market"})
+    df["code"] = df["code"].astype(str).str.strip()
     df = df[df["market"].astype(str).str.contains("プライム|スタンダード|グロース")]
-    df = df[df["code"].astype(str).str.len() == 4]
-    df["code"] = df["code"].astype(str)
+    df = df[df["code"].str.fullmatch(r"[0-9A-Za-z]{4}")]
     return df[["code", "name", "market"]].reset_index(drop=True)
 
 
