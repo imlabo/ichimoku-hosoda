@@ -191,6 +191,7 @@ function drawChart(F){
   const mg=(LY('ly_mg')&&isD&&MGR.length)?(()=>{const pts=[]; MGR.forEach(r=>{ if(!/^\d{4}-/.test(r.date)) return;
       let k=-1; for(let i=o.date.length-1;i>=0;i--){ if(o.date[i]<=r.date){k=i;break} } if(k<0) return; pts.push({x:o.date[k],r})});
       return pts.length?pts:null})():null;
+  const MPL=(side,d)=>{const P=DATA.margin&&DATA.margin.pl&&DATA.margin.pl[side]; const x=P&&P.series.find(z=>z.date===d); return x?(x.pl>=0?'+':'')+x.pl.toFixed(1)+'%':'-'};
   const DOM=mg&&VOL?{p:[0.40,1],v:[0.22,0.36],m:[0,0.18]}:mg?{p:[0.24,1],m:[0,0.2]}:VOL?{p:[0.22,1],v:[0,0.18]}:{p:[0,1]};
   const L=F.lines, lfrom=L.date.indexOf(o.date[0]); const Ls={}; for(const k in L) Ls[k]=L[k].slice(lfrom<0?0:lfrom);
   const u=F.unit;
@@ -209,9 +210,9 @@ function drawChart(F){
     ...(VOL?[{type:'bar',x:o.date,y:o.volume,yaxis:'y2',name:'出来高',showlegend:false,
       marker:{color:o.close.map((c,i)=>c>=o.open[i]?'rgba(192,57,43,.55)':'rgba(31,95,139,.55)')},hovertemplate:'出来高 %{x}<br>%{y:,.0f}<extra></extra>'}]:[]),
     ...(mg?[{x:mg.map(p=>p.x),y:mg.map(p=>p.r.buy),yaxis:'y3',name:'買い残',mode:'lines+markers',line:{color:'#c0392b',width:1.5,shape:'hv'},marker:{size:4},
-              customdata:mg.map(p=>[p.r.date,p.r.ratio]),hovertemplate:'買い残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<extra></extra>'},
+              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('buy',p.r.date)]),hovertemplate:'買い残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<br>買い方損益（推定） %{customdata[2]}<extra></extra>'},
              {x:mg.map(p=>p.x),y:mg.map(p=>p.r.sell),yaxis:'y3',name:'売り残',mode:'lines+markers',line:{color:'#1f5f8b',width:1.5,shape:'hv'},marker:{size:4},
-              customdata:mg.map(p=>[p.r.date,p.r.ratio]),hovertemplate:'売り残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<extra></extra>'}]:[]),
+              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('sell',p.r.date)]),hovertemplate:'売り残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<br>売り方損益（推定） %{customdata[2]}<extra></extra>'}]:[]),
     {x:Ls.date,y:Ls.span_tk,name:'先行(基準転換)',line:{color:'#8e9aaf',width:1},hoverinfo:'skip'},
     {x:Ls.date,y:Ls.span_52,name:'先行(52)',line:{color:'#8e9aaf',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(142,154,175,.18)',hoverinfo:'skip'},
     {x:Ls.date,y:Ls.tenkan,name:'転換線(9)',line:{color:'#d35400',width:1.3}},
@@ -568,8 +569,12 @@ function drawSide(F){
     else{const rows=M.rows.slice(-5); const last=rows[rows.length-1], first=rows[0];
       const trend=(k,lab)=>{const a=first[k],b=last[k]; if(a==null||b==null) return ''; const d=b-a, pc=a?(d/a*100).toFixed(1):'-'; return `${lab} ${d>=0?'+':''}${fmt(d)}（${d>=0?'+':''}${pc}%）`};
       h+=`<div class="muted" style="margin-bottom:6px">${first.date}→${last.date}: ${trend('buy','買い残')}、${trend('sell','売り残')}、信用倍率 ${first.ratio??'-'}→${last.ratio??'-'}</div>`;
-      h+=`<table><tr><th>日付</th><th class="num">買い残</th><th class="num">前週比</th><th class="num">売り残</th><th class="num">前週比</th><th class="num">倍率</th></tr>`+
-        rows.map(r=>`<tr><td>${r.date}</td><td class="num">${fmt(r.buy)}</td><td class="num ${r.buy_chg>0?'ng':'ok'}">${r.buy_chg==null?'-':(r.buy_chg>0?'+':'')+fmt(r.buy_chg)}</td><td class="num">${fmt(r.sell)}</td><td class="num">${r.sell_chg==null?'-':(r.sell_chg>0?'+':'')+fmt(r.sell_chg)}</td><td class="num">${r.ratio??'-'}</td></tr>`).join('')+'</table>';
+      const PL=M.pl, plOf=(side,d)=>{const x=PL&&PL[side]&&PL[side].series.find(z=>z.date===d); return x?x.pl:null}, pc=v=>v==null?'-':`<span class="${v>=0?'ok':'ng'}">${v>=0?'+':''}${v.toFixed(1)}%</span>`;
+      if(PL&&(PL.buy||PL.sell)) h+=`<div class="verdict" style="background:#f4f6fb;border-left-color:#1f5f8b;margin:6px 0"><b>含み益率（推定）</b>：`+
+        (PL.buy?`買い方 <b>${pc(PL.buy.pl)}</b>（平均取得 推定 ${fmt(PL.buy.cost)}）`:'')+(PL.buy&&PL.sell?'　／　':'')+(PL.sell?`売り方 <b>${pc(PL.sell.pl)}</b>（平均売り値 推定 ${fmt(PL.sell.cost)}）`:'')+
+        `<div class="muted" style="margin-top:4px">直近${PL.weeks}週（制度信用の期日6か月に合わせる）の残高の増加分を、その週の${PL.basis}で建てたと見なして平均単価を積み上げ、減少分は平均単価を変えずに差し引いた推定値。買い方の含み損が大きい（目安 −10%〜−20%）ほど投げ売りが出やすく、売り方の含み損が大きいほど買い戻しが出やすいとされる。</div></div>`;
+      h+=`<table><tr><th>日付</th><th class="num">買い残</th><th class="num">前週比</th><th class="num">売り残</th><th class="num">前週比</th><th class="num">倍率</th>${PL?'<th class="num">買い方損益</th><th class="num">売り方損益</th>':''}</tr>`+
+        rows.map(r=>`<tr><td>${r.date}</td><td class="num">${fmt(r.buy)}</td><td class="num ${r.buy_chg>0?'ng':'ok'}">${r.buy_chg==null?'-':(r.buy_chg>0?'+':'')+fmt(r.buy_chg)}</td><td class="num">${fmt(r.sell)}</td><td class="num">${r.sell_chg==null?'-':(r.sell_chg>0?'+':'')+fmt(r.sell_chg)}</td><td class="num">${r.ratio??'-'}</td>${PL?`<td class="num">${pc(plOf('buy',r.date))}</td><td class="num">${pc(plOf('sell',r.date))}</td>`:''}</tr>`).join('')+'</table>';
       h+=`<div id="marginchart" style="height:160px;margin-top:6px"></div>`;
       setTimeout(()=>{ if(!$('#marginchart')) return; Plotly.newPlot('marginchart',[
         {x:rows.map(r=>r.date),y:rows.map(r=>r.buy),type:'bar',name:tr('買い残'),marker:{color:'#c0392b'}},

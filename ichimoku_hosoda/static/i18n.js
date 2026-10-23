@@ -451,6 +451,12 @@ const R=[ // [日本語, English, Tiếng Việt]
 ["目","th"," thứ"],["連"," run"," chuỗi"],["週","w"," tuần"],["陰","Bear","Giảm"],["陽","Bull","Tăng"],
 ["、",", ",", "],["。",". ",". "],["（"," ("," ("],["）",")",")"],["：",": ",": "],["／"," / "," / "],["「","“","“"],["」","”","”"],
 // 追加: 画面の固定文言
+["含み益率（推定）","Unrealized P/L of margin traders (estimate)","Lãi/lỗ chưa thực hiện của nhà đầu tư ký quỹ (ước tính)"],
+["平均取得 推定","est. avg. cost","giá vốn TB ước tính"],["平均売り値 推定","est. avg. short price","giá bán khống TB ước tính"],["買い方損益（推定）","Longs P/L (est.)","Lãi/lỗ bên mua (ước tính)"],["売り方損益（推定）","Shorts P/L (est.)","Lãi/lỗ bên bán (ước tính)"],["買い方損益","Longs P/L","Lãi/lỗ bên mua"],["売り方損益","Shorts P/L","Lãi/lỗ bên bán"],
+["買い方","Longs","Bên mua"],["売り方","Shorts","Bên bán"],
+["週（制度信用の期日6か月に合わせる）の残高の増加分を、その週の"," weeks (matching the 6-month term of standard margin): each week's increase in balance is assumed to be opened at that week's "," tuần (theo kỳ hạn 6 tháng của ký quỹ tiêu chuẩn): phần dư nợ tăng mỗi tuần được giả định mở ở mức "],
+["で建てたと見なして平均単価を積み上げ、減少分は平均単価を変えずに差し引いた推定値。買い方の含み損が大きい（目安 −10%〜−20%）ほど投げ売りが出やすく、売り方の含み損が大きいほど買い戻しが出やすいとされる。",", accumulated into an average; decreases are removed without changing the average. A large loss for longs (around −10% to −20%) tends to trigger capitulation selling; a large loss for shorts tends to trigger short covering."," của tuần đó và cộng dồn thành giá trung bình; phần giảm được trừ đi mà không đổi giá trung bình. Bên mua lỗ lớn (khoảng −10% đến −20%) dễ dẫn đến bán tháo; bên bán lỗ lớn dễ dẫn đến mua lại để đóng vị thế."],
+["終値の平均","average close","giá đóng cửa trung bình"],["売買単価","average trade price","giá giao dịch TB"],
 ["＝もみ合いの上放れ（水準自体の上昇）"," = upside breakout from the range (the level itself rises)"," = bứt phá lên khỏi vùng đi ngang (chính mức giá tăng lên)"],
 ["＝もみ合いの下放れ（水準自体の下落）"," = downside breakout from the range (the level itself falls)"," = bứt phá xuống khỏi vùng đi ngang (chính mức giá giảm xuống)"],
 ["を上抜け"," broken upward"," bị vượt lên"],["を割り込み"," broken downward"," bị thủng"],

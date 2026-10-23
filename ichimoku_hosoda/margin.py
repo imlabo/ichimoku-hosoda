@@ -66,13 +66,15 @@ def fetch_kabutan(c: str, weeks: int = 60) -> dict:
                 continue
             col = lambda key: next((t.columns[i] for i, x in enumerate(cols) if key in x and "額" not in x), None)
             dcol, scol, bcol, rcol = col("日付"), col("売り残"), col("買い残"), col("倍率")
+            pcol = col("売買単価")
             for _, r in t.iterrows():
                 m = re.search(r"(\d{2,4})/(\d{1,2})/(\d{1,2})", str(r[dcol]))
                 if not m:
                     continue
                 y = int(m.group(1)); y = y + 2000 if y < 100 else y
                 rows.append({"date": f"{y}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
-                             "sell": _num(r[scol]), "buy": _num(r[bcol]), "ratio": _num(r[rcol]) if rcol is not None else None})
+                             "sell": _num(r[scol]), "buy": _num(r[bcol]), "ratio": _num(r[rcol]) if rcol is not None else None,
+                             "avg_price": _num(r[pcol]) if pcol is not None else None})
                 got += 1
         if got < 30:
             break
@@ -162,3 +164,58 @@ def synthetic_margin(end=None, weeks: int = 30) -> dict:
         x["buy_chg"] = rows[i]["buy"] - rows[i - 1]["buy"] if i else None
         x["sell_chg"] = rows[i]["sell"] - rows[i - 1]["sell"] if i else None
     return {"rows": rows, "source": "synthetic"}
+
+
+def estimate_pl(m: dict, daily: pd.DataFrame, window: int = 26) -> dict | None:
+    """信用の買い方・売り方の含み益率（推定）。
+    週ごとの残高の増加分を、その週の平均売買単価（無ければその週の終値の平均）で建てたと見なして平均取得単価を積み上げる。
+    減少分は平均単価を変えずに差し引く。制度信用の期日（6か月）に合わせて直近 window 週から積み上げ始める。
+    含み益率: 買い方 = 現値 ÷ 平均取得 − 1、売り方 = 1 − 現値 ÷ 平均取得。"""
+    rows = (m or {}).get("rows") or []
+    if len(rows) < 4 or daily is None or not len(daily):
+        return None
+    close = daily["Close"]
+    def wk_price(r):
+        if r.get("avg_price"):
+            return float(r["avg_price"])
+        d = pd.Timestamp(r["date"])
+        seg = close[(close.index > d - pd.Timedelta(days=7)) & (close.index <= d)]
+        return float(seg.mean()) if len(seg) else None
+    rs = rows[-window:]
+    out = {}
+    for side in ("buy", "sell"):
+        bal = val = None
+        hist = []
+        for r in rs:
+            q, p = r.get(side), wk_price(r)
+            if q is None or p is None:
+                continue
+            if bal is None:                       # 最初の週の残高はその週の単価で建てたと見なす
+                bal, val = q, q * p
+            elif q > bal:
+                val += (q - bal) * p
+                bal = q
+            else:
+                val = val * (q / bal) if bal else 0
+                bal = q
+            if bal:
+                hist.append({"date": r["date"], "cost": val / bal})
+        if not hist:
+            continue
+        cost = hist[-1]["cost"]
+        px = float(close.iloc[-1])
+        pl = (px / cost - 1) if side == "buy" else (1 - px / cost)
+        # 週ごとの含み益率の推移（その週の終値で評価）
+        series = []
+        for h in hist:
+            d = pd.Timestamp(h["date"])
+            seg = close[close.index <= d]
+            if len(seg):
+                p0 = float(seg.iloc[-1])
+                series.append({"date": h["date"], "pl": round(((p0 / h["cost"] - 1) if side == "buy" else (1 - p0 / h["cost"])) * 100, 2)})
+        out[side] = {"cost": round(cost, 2), "pl": round(pl * 100, 2), "series": series}
+    if not out:
+        return None
+    out["basis"] = "売買単価" if any(r.get("avg_price") for r in rs) else "終値の平均"
+    out["weeks"] = len(rs)
+    return out

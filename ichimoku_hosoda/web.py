@@ -282,6 +282,11 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     res["api_code"] = code     # 以降の再計算などでサーバーに渡すコード
     res["margin"] = (margin.synthetic_margin(end=full.index[-1]) if demo else
                      margin.fetch_margin(code) if res["market"] == "jp" else {"skip": True})
+    try:
+        if res["margin"].get("rows"):
+            res["margin"]["pl"] = margin.estimate_pl(res["margin"], full)
+    except Exception as e:  # noqa: BLE001
+        res["margin"]["pl_error"] = str(e)
     _cache[key] = (time.time(), res)
     return JSONResponse(res)
 
