@@ -94,6 +94,121 @@ def index():
     return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
+@app.get("/screener", response_class=HTMLResponse)
+def screener():
+    """大出来高 × 一目 監視リスト。screener/watchlist.json（毎営業日 17:30 JST 更新）を表示。"""
+    import html as _html
+    import json as _json
+
+    path = Path(__file__).resolve().parent.parent / "screener" / "watchlist.json"
+    try:
+        wl = _json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        wl = []
+
+    def norm(x):
+        x.setdefault("direction", "down")
+        if "spike_chg_pct" not in x and "spike_drop_pct" in x:
+            x["spike_chg_pct"] = x.pop("spike_drop_pct")
+        if "confirmed" not in x and "confirmed_white_candle" in x:
+            x["confirmed"] = x.pop("confirmed_white_candle")
+        if "level_held" not in x and "spike_low_held" in x:
+            x["level_held"] = x.pop("spike_low_held")
+        return x
+
+    wl = [norm(x) for x in wl]
+    asof = max((x.get("last_date", "") for x in wl), default="")
+    mark = lambda b: '<span class="o">\u25cb</span>' if b else '<span class="x">\u2014</span>'
+    CLOUD = {"above": "雲上", "in": "雲中", "below": "雲下"}
+
+    def table(rows, direction):
+        if not rows:
+            return '<p class="none">該当なし</p>'
+        d = direction == "down"
+        cells = "".join(
+            f"<tr><td class=\"code\">{_html.escape(str(x['code']))}</td>"
+            f"<td>{_html.escape(str(x['name']))}</td>"
+            f"<td>{_html.escape(str(x['spike_date']))}</td>"
+            f"<td class=\"num {'dn' if x['spike_chg_pct'] < 0 else 'upc'}\">{x['spike_chg_pct']:+.2f}%</td>"
+            f"<td class=\"num\">\u00d7{x['spike_vol_mult']}</td>"
+            f"<td class=\"num\">{x['days_since_spike']}</td>"
+            f"<td>{mark(x['confirmed'])}</td><td>{mark(x['level_held'])}</td>"
+            f"<td>{mark(x['above_tenkan'])}</td><td>{mark(x['above_kijun'])}</td>"
+            f"<td>{CLOUD.get(x['cloud_position'], x['cloud_position'])}</td>"
+            f"<td>{mark(x['chikou_bullish'])}</td>"
+            f"<td class=\"num\">{x['basic_number_hit'] or '\u2014'}</td>"
+            f"<td class=\"num score\">{x['score']}</td></tr>"
+            for x in rows)
+        return (
+            "<div class=\"wrap\"><table><thead><tr>"
+            "<th>コード</th><th>銘柄</th>"
+            f"<th>{'急落日' if d else '急騰日'}</th><th>{'下落率' if d else '上昇率'}</th>"
+            "<th>出来高倍率</th><th>経過日</th>"
+            f"<th>{'陽線確認' if d else '終値維持'}</th><th>安値維持</th>"
+            "<th>転換線</th><th>基準線</th><th>雲</th><th>遅行</th><th>日柄</th><th>スコア</th>"
+            f"</tr></thead><tbody>{cells}</tbody></table></div>")
+
+    down = [x for x in wl if x["direction"] == "down"]
+    up = [x for x in wl if x["direction"] == "up"]
+
+    return f"""<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大出来高 × 一目 監視リスト</title>
+<style>
+:root {{ --bg:#fbfaf8; --fg:#1b1a18; --muted:#6b6862; --line:#e3e0da;
+        --card:#fff; --up:#b3261e; --dn:#1d5c9e; --accent:#8a6a3b; }}
+@media (prefers-color-scheme: dark) {{ :root:not([data-theme="light"]) {{
+  --bg:#17161a; --fg:#eceae6; --muted:#9a968e; --line:#302e33;
+  --card:#201f24; --up:#e8705f; --dn:#79a9de; --accent:#c6a978; }} }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:var(--bg); color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  line-height:1.6; }}
+.page {{ max-width:1100px; margin:0 auto; padding:32px 16px 64px; }}
+h1 {{ font-size:1.5rem; margin:0 0 4px; letter-spacing:.02em; }}
+.asof {{ color:var(--muted); font-size:.85rem; margin:0 0 28px; }}
+h2 {{ font-size:1.05rem; margin:36px 0 12px; padding-bottom:6px;
+  border-bottom:2px solid var(--accent); display:inline-block; }}
+h2 .n {{ color:var(--muted); font-weight:400; font-size:.85rem; margin-left:8px; }}
+.wrap {{ overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--card); }}
+table {{ border-collapse:collapse; width:100%; font-size:.85rem; }}
+th, td {{ padding:8px 10px; text-align:left; white-space:nowrap;
+  border-bottom:1px solid var(--line); }}
+th {{ background:color-mix(in srgb, var(--card) 88%, var(--fg));
+  font-weight:600; font-size:.78rem; color:var(--muted); }}
+tbody tr:last-child td {{ border-bottom:none; }}
+.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
+.code {{ font-variant-numeric:tabular-nums; color:var(--accent); font-weight:600; }}
+.score {{ font-weight:700; }}
+.upc {{ color:var(--up); }} .dn {{ color:var(--dn); }}
+.o {{ color:var(--accent); font-weight:700; }} .x {{ color:var(--muted); }}
+.none {{ color:var(--muted); font-size:.9rem; padding:12px 0; }}
+.note {{ margin-top:36px; padding-top:16px; border-top:1px solid var(--line);
+  color:var(--muted); font-size:.8rem; }}
+.note li {{ margin:4px 0; }}
+a {{ color:var(--accent); }}
+</style></head><body><div class="page">
+<h1>大出来高 × 一目 監視リスト</h1>
+<p class="asof">{_html.escape(asof) or "データなし"} 引け後 / 東証プライム / 毎営業日 17:30 JST 更新
+ &middot; <a href="/">節目判定にもどる</a></p>
+
+<h2>下落（底打ち候補）<span class="n">{len(down)} 件</span></h2>
+{table(down, "down")}
+
+<h2>上昇（ブレイク候補）<span class="n">{len(up)} 件</span></h2>
+{table(up, "up")}
+
+<div class="note"><ul>
+<li>抽出条件: 出来高が20日平均の3倍以上 &times; 下落側は7%超の下落または大陰線かつ20日高値から15%以上下落／上昇側は7%超の上昇または大陽線かつ20日高値を更新</li>
+<li>スコア: 確認+2 / 安値維持+2（割れ-3） / 転換線上+2 / 基準線上+1 / 遅行好転+1 / 基本数値一致+1 / 雲上+1・雲下-1</li>
+<li>確認: 下落側は急落後に陽線が出たか、上昇側は急騰日の終値以上を維持しているか</li>
+<li>急落／急騰日から約26営業日で自動除外</li>
+<li>本ページは個人的な研究用の集計であり、投資助言ではありません。売買の判断はご自身の責任でお願いします。</li>
+</ul></div>
+</div></body></html>"""
+
+
 @app.get("/guide", response_class=HTMLResponse)
 def guide():
     return (Path(__file__).parent / "static" / "guide.html").read_text(encoding="utf-8")

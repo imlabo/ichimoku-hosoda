@@ -23,10 +23,14 @@ import requests
 import yfinance as yf
 
 # ---------------- 条件（ここを調整） ----------------
-VOL_MULT = 3.0          # 当日出来高 >= 20日平均 × VOL_MULT
+VOL_MULT = 3.0          # 当日出来高 >= 20日平均 × VOL_MULT（上昇・下落 共通）
+# 下落側（セリング・クライマックス候補）
 DROP_PCT = -7.0         # 当日終値 <= 前日終値 × (1 + DROP_PCT/100)
 PRIOR_DROP_PCT = -15.0  # 直近20日高値からの下落率（これ以下で「下げ続けた後」とみなす）
-BIG_BLACK_BODY = 0.70   # 大陰線: 実体 / (高値-安値) >= 0.70（下落率条件とどちらか満たせばOK）
+BIG_BODY = 0.70         # 大陰線/大陽線: 実体 / (高値-安値) >= この値（騰落率条件とどちらか満たせばOK）
+# 上昇側（出来高を伴うブレイク候補）
+RISE_PCT = 7.0          # 当日終値 >= 前日終値 × (1 + RISE_PCT/100)
+BREAKOUT_MARGIN = 0.0   # 当日終値 >= 直近20日高値 × (1 + BREAKOUT_MARGIN/100)（新高値ブレイク）
 LOOKBACK = 5            # 何営業日前までの急落日を拾うか
 MIN_TURNOVER = 1e8      # 20日平均売買代金 >= 1億円（薄商い除外）
 MIN_PRICE = 100         # 低位株除外
@@ -184,46 +188,62 @@ def ichimoku(d: pd.DataFrame) -> pd.DataFrame:
     return x
 
 
-def find_spike_days(d: pd.DataFrame) -> list[pd.Timestamp]:
+def find_spike_days(d: pd.DataFrame) -> list[tuple[pd.Timestamp, str]]:
+    """直近 LOOKBACK 営業日の「出来高急増 × 急落／急騰」を (日付, 方向) で返す"""
     c, v, h, l, o = d["Close"], d["Volume"], d["High"], d["Low"], d["Open"]
     avg_vol = v.rolling(20).mean().shift(1)
     chg = c.pct_change() * 100
-    body = (o - c) / (h - l).replace(0, np.nan)
+    rng = (h - l).replace(0, np.nan)
+    black = (o - c) / rng   # 陰線の実体比
+    white = (c - o) / rng   # 陽線の実体比
     hi20 = h.rolling(20).max().shift(1)
     prior = (c / hi20 - 1) * 100
 
-    cond = (v >= avg_vol * VOL_MULT) & ((chg <= DROP_PCT) | ((body >= BIG_BLACK_BODY) & (chg < 0))) & (prior <= PRIOR_DROP_PCT)
-    recent = d.index[-LOOKBACK:]
-    return [t for t in cond[cond].index if t in recent]
+    big_vol = v >= avg_vol * VOL_MULT
+    down = big_vol & ((chg <= DROP_PCT) | ((black >= BIG_BODY) & (chg < 0))) & (prior <= PRIOR_DROP_PCT)
+    up = big_vol & ((chg >= RISE_PCT) | ((white >= BIG_BODY) & (chg > 0))) & (c >= hi20 * (1 + BREAKOUT_MARGIN / 100))
+
+    recent = set(d.index[-LOOKBACK:])
+    hits = [(t, "down") for t in down[down].index if t in recent]
+    hits += [(t, "up") for t in up[up].index if t in recent]
+    return hits
 
 
-def evaluate(code: str, name: str, market: str, d: pd.DataFrame, spike: pd.Timestamp) -> dict:
+def evaluate(code: str, name: str, market: str, d: pd.DataFrame,
+             spike: pd.Timestamp, direction: str) -> dict:
     ich = ichimoku(d)
     last = d.index[-1]
     i_spike = d.index.get_loc(spike)
-    days_since = len(d) - 1 - i_spike  # 急落日=0
+    days_since = len(d) - 1 - i_spike  # 急落／急騰日 = 0
 
     c_last = float(d["Close"].iloc[-1])
-    o_last = float(d["Open"].iloc[-1])
     low_spike = float(d["Low"].loc[spike])
+    high_spike = float(d["High"].loc[spike])
+    close_spike = float(d["Close"].loc[spike])
     after = d.iloc[i_spike + 1:]
 
-    # 確認条件
-    confirmed = bool((after["Close"] > after["Open"]).any()) if len(after) else False  # 急落後に陽線あり
-    low_held = bool((after["Low"] >= low_spike).all()) if len(after) else True        # 急落日安値を割っていない
+    # 一目均衡表の位置関係
     above_tenkan = c_last > float(ich["tenkan"].iloc[-1])
     above_kijun = c_last > float(ich["kijun"].iloc[-1])
     cloud_top = float(np.nanmax([ich["senkou_a"].iloc[-1], ich["senkou_b"].iloc[-1]]))
     cloud_bot = float(np.nanmin([ich["senkou_a"].iloc[-1], ich["senkou_b"].iloc[-1]]))
     cloud_pos = "above" if c_last > cloud_top else ("in" if c_last >= cloud_bot else "below")
-    # 遅行スパン: 当日終値 vs 26日前の終値
     chikou_up = c_last > float(d["Close"].iloc[-27]) if len(d) > 27 else False
-    # 日柄: 急落日からの経過が基本数値±1
     hidara_hit = next((n for n in BASIC_NUMBERS if abs(days_since - n) <= 1), None)
+
+    # 方向ごとの確認条件
+    if direction == "down":
+        # 急落後に陽線が出たか / 急落日の安値を守っているか
+        confirmed = bool((after["Close"] > after["Open"]).any()) if len(after) else False
+        level_held = bool((after["Low"] >= low_spike).all()) if len(after) else True
+    else:
+        # 急騰日の終値以上を維持しているか / 急騰日の安値を守っているか
+        confirmed = c_last >= close_spike
+        level_held = bool((after["Low"] >= low_spike).all()) if len(after) else True
 
     score = 0
     score += 2 if confirmed else 0
-    score += 2 if low_held else -3
+    score += 2 if level_held else -3
     score += 2 if above_tenkan else 0
     score += 1 if above_kijun else 0
     score += 1 if chikou_up else 0
@@ -232,15 +252,18 @@ def evaluate(code: str, name: str, market: str, d: pd.DataFrame, spike: pd.Times
 
     return {
         "code": code, "name": name, "market": market,
+        "direction": direction,
         "spike_date": spike.strftime("%Y-%m-%d"),
-        "spike_drop_pct": round(float(d["Close"].pct_change().loc[spike] * 100), 2),
+        "spike_chg_pct": round(float(d["Close"].pct_change().loc[spike] * 100), 2),
         "spike_vol_mult": round(float(d["Volume"].loc[spike] / d["Volume"].rolling(20).mean().shift(1).loc[spike]), 1),
         "spike_low": low_spike,
+        "spike_high": high_spike,
+        "spike_close": close_spike,
         "last_date": last.strftime("%Y-%m-%d"),
         "close": c_last,
         "days_since_spike": days_since,
-        "confirmed_white_candle": confirmed,
-        "spike_low_held": low_held,
+        "confirmed": confirmed,
+        "level_held": level_held,
         "above_tenkan": above_tenkan,
         "above_kijun": above_kijun,
         "cloud_position": cloud_pos,
@@ -273,16 +296,29 @@ def screen() -> tuple[list[dict], str]:
         if float((d["Close"] * d["Volume"]).rolling(20).mean().iloc[-1]) < MIN_TURNOVER:
             continue
         today = d.index[-1].strftime("%Y-%m-%d")
-        for spike in find_spike_days(d):
-            found.append(evaluate(row["code"], row["name"], row["market"], d, spike))
+        for spike, direction in find_spike_days(d):
+            found.append(evaluate(row["code"], row["name"], row["market"], d, spike, direction))
     return found, today or dt.date.today().isoformat()
+
+
+def _normalize(x: dict) -> dict:
+    """旧フォーマット（方向なし・spike_drop_pct）の記録を読めるようにする"""
+    x.setdefault("direction", "down")
+    if "spike_chg_pct" not in x and "spike_drop_pct" in x:
+        x["spike_chg_pct"] = x.pop("spike_drop_pct")
+    if "confirmed" not in x and "confirmed_white_candle" in x:
+        x["confirmed"] = x.pop("confirmed_white_candle")
+    if "level_held" not in x and "spike_low_held" in x:
+        x["level_held"] = x.pop("spike_low_held")
+    return x
 
 
 def merge_watchlist(new: list[dict], today: str) -> list[dict]:
     old = json.loads(OUT_JSON.read_text(encoding="utf-8")) if OUT_JSON.exists() else []
-    by_key = {(x["code"], x["spike_date"]): x for x in old}
+    key = lambda x: (x["code"], x["spike_date"], x["direction"])
+    by_key = {key(_normalize(x)): x for x in old}
     for x in new:
-        by_key[(x["code"], x["spike_date"])] = x  # 最新評価で上書き
+        by_key[key(x)] = x  # 最新評価で上書き
     kept = []
     for x in by_key.values():
         age = (pd.Timestamp(today) - pd.Timestamp(x["spike_date"])).days
@@ -292,18 +328,40 @@ def merge_watchlist(new: list[dict], today: str) -> list[dict]:
     return kept
 
 
-def to_markdown(wl: list[dict], today: str) -> str:
-    lines = [f"# 大出来高急落 × 一目 監視リスト（{today} 引け後）", "",
-             "| コード | 銘柄 | 急落日 | 下落率 | 出来高倍率 | 経過日 | 陽線確認 | 安値維持 | 転換線 | 基準線 | 雲 | 遅行 | 日柄 | スコア |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+SCORE_NOTE = ("スコア: 確認+2 / 水準維持+2（割れ-3） / 転換線上+2 / 基準線上+1 / "
+              "遅行好転+1 / 基本数値一致+1 / 雲上+1・雲下-1")
+CONFIRM_LABEL = {"down": "陽線確認", "up": "終値維持"}
+
+
+def _table(rows: list[dict], direction: str) -> list[str]:
+    head = "急落日" if direction == "down" else "急騰日"
+    chg = "下落率" if direction == "down" else "上昇率"
+    out = [f"| コード | 銘柄 | {head} | {chg} | 出来高倍率 | 経過日 | "
+           f"{CONFIRM_LABEL[direction]} | 安値維持 | 転換線 | 基準線 | 雲 | 遅行 | 日柄 | スコア |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     ok = lambda b: "○" if b else "－"
-    for x in wl:
-        lines.append(
-            f"| {x['code']} | {x['name']} | {x['spike_date']} | {x['spike_drop_pct']}% | ×{x['spike_vol_mult']} | {x['days_since_spike']} "
-            f"| {ok(x['confirmed_white_candle'])} | {ok(x['spike_low_held'])} | {ok(x['above_tenkan'])} | {ok(x['above_kijun'])} "
+    for x in rows:
+        out.append(
+            f"| {x['code']} | {x['name']} | {x['spike_date']} | {x['spike_chg_pct']}% "
+            f"| ×{x['spike_vol_mult']} | {x['days_since_spike']} "
+            f"| {ok(x['confirmed'])} | {ok(x['level_held'])} | {ok(x['above_tenkan'])} | {ok(x['above_kijun'])} "
             f"| {x['cloud_position']} | {ok(x['chikou_bullish'])} | {x['basic_number_hit'] or '－'} | {x['score']} |")
-    lines += ["", "- スコア: 陽線確認+2 / 安値維持+2（割れ-3） / 転換線上+2 / 基準線上+1 / 遅行好転+1 / 基本数値一致+1 / 雲上+1・雲下-1",
-              "- 急落日から約26営業日で自動除外。投資助言ではありません。"]
+    if len(out) == 2:
+        out = ["該当なし"]
+    return out
+
+
+def to_markdown(wl: list[dict], today: str) -> str:
+    down = [x for x in wl if x["direction"] == "down"]
+    up = [x for x in wl if x["direction"] == "up"]
+    lines = [f"# 大出来高 × 一目 監視リスト（{today} 引け後）", "",
+             f"## 下落（底打ち候補） {len(down)} 件", ""]
+    lines += _table(down, "down")
+    lines += ["", f"## 上昇（ブレイク候補） {len(up)} 件", ""]
+    lines += _table(up, "up")
+    lines += ["", f"- {SCORE_NOTE}",
+              "- 下落側の確認＝急落後に陽線が出たか。上昇側の確認＝急騰日の終値以上を維持しているか",
+              "- 急落／急騰日から約26営業日で自動除外。投資助言ではありません。"]
     return "\n".join(lines)
 
 
@@ -314,4 +372,9 @@ if __name__ == "__main__":
     wl = merge_watchlist(new, today)
     OUT_JSON.write_text(json.dumps(wl, ensure_ascii=False, indent=2), encoding="utf-8")
     OUT_MD.write_text(to_markdown(wl, today), encoding="utf-8")
-    print(f"{today}: 新規 {len(new)} 件 / 監視リスト {len(wl)} 件")
+    nd = sum(1 for x in new if x["direction"] == "down")
+    nu = len(new) - nd
+    wd = sum(1 for x in wl if x["direction"] == "down")
+    wu = len(wl) - wd
+    print(f"{today}: 新規 {len(new)} 件（下落 {nd} / 上昇 {nu}）"
+          f" / 監視リスト {len(wl)} 件（下落 {wd} / 上昇 {wu}）")
