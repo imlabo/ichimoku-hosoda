@@ -10,3 +10,4 @@ matplotlib-fontja>=1.0
 lxml>=5.0
 openpyxl>=3.1
 xlrd>=2.0
+requests>=2.31

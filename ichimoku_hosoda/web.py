@@ -94,17 +94,49 @@ def index():
     return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
+WATCHLIST_RAW = ("https://raw.githubusercontent.com/imlabo/ichimoku-hosoda/"
+                 "main/screener/watchlist.json")
+_wl_cache: tuple[float, list] | None = None
+
+
+def _load_watchlist() -> list:
+    """監視リストを取得。GitHub の raw を15分キャッシュし、失敗時は同梱ファイルにフォールバック。
+
+    Docker イメージには screener/ を同梱していないため、raw 取得が主経路。
+    こうしておくと日々の更新のたびに再デプロイしなくてもページが最新になる。
+    """
+    global _wl_cache
+    import json as _json
+
+    now = time.time()
+    if _wl_cache and now - _wl_cache[0] < 900:
+        return _wl_cache[1]
+
+    wl: list = []
+    try:
+        import requests
+        r = requests.get(WATCHLIST_RAW, timeout=10)
+        r.raise_for_status()
+        wl = r.json()
+    except Exception:
+        try:
+            path = Path(__file__).resolve().parent.parent / "screener" / "watchlist.json"
+            wl = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            wl = []
+
+    if wl:
+        _wl_cache = (now, wl)
+    return wl
+
+
 @app.get("/screener", response_class=HTMLResponse)
 def screener():
     """大出来高 × 一目 監視リスト。screener/watchlist.json（毎営業日 17:30 JST 更新）を表示。"""
     import html as _html
     import json as _json
 
-    path = Path(__file__).resolve().parent.parent / "screener" / "watchlist.json"
-    try:
-        wl = _json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        wl = []
+    wl = _load_watchlist()
 
     def norm(x):
         x.setdefault("direction", "down")
