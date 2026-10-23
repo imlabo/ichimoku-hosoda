@@ -303,6 +303,12 @@ def api_analyze(code: str, period: str = "6y", horizon: int = 60, intraday: int 
     _LAST.clear()
     _ERRORS.clear()
     res = analyze_all(df, data.normalize_symbol(code), horizon, intra, full_df=full)
+    try:   # 水平線（支持線・抵抗線）：週足・日足・1時間足から
+        from . import srlines
+        h1 = intra.get("h1", (None,))[0] if intra else None
+        res["sr"] = srlines.compute(full, data.resample(full, "W-FRI") if len(full) >= 60 else None, h1)
+    except Exception as e:  # noqa: BLE001
+        res["sr"] = {"levels": [], "error": str(e)}
     res["frames"] = {k: v for k, v in res["frames"].items() if v is not None}
     res["notes"] = res.get("notes", []) + list(_ERRORS)
     res["display_name"] = disp or (names.name_for(code) if not demo else "デモデータ")
