@@ -180,8 +180,17 @@ def _evaluate(lv: Level, df: pd.DataFrame, pivs: list[Pivot], same_tol: float = 
     lv.score = len(hits) / expected * 10 + (2 if "横ばい" in lv.source else 0) + (1.5 if "遅行" in lv.source else 0)
     hi_since = df["High"].iloc[lv.origin_i:].max()
     lo_since = df["Low"].iloc[lv.origin_i:].min()
-    lv.upper_limit = 2 * lv.price - lo_since   # 安値を反対側とした場合の上限
-    lv.lower_limit = 2 * lv.price - hi_since   # 高値を反対側とした場合の下限
+    up = 2 * lv.price - lo_since   # 安値を反対側とした場合の上限
+    dn = 2 * lv.price - hi_since   # 高値を反対側とした場合の下限
+    # 反対側の極値が水準の 2 倍を超える（値段が 0 以下になる）なら、その水準はもう今のもみ合いの中心ではない → 限界は出さない
+    lv.upper_limit = up if up > 0 else float("nan")
+    lv.lower_limit = dn if dn > 0 else float("nan")
+    # 今の値段から遠い水準（何年も前の安値圏など）は「最有力」にしない
+    c = float(df["Close"].iloc[-1])
+    dist = abs(c / lv.price - 1) if lv.price > 0 else 9.0
+    lv.score *= 1.0 / (1.0 + (dist / 0.15) ** 2)
+    if np.isnan(lv.upper_limit) or np.isnan(lv.lower_limit):
+        lv.score *= 0.5
 
 
 def level_change_dates(levels: list[Level], index_ext: pd.DatetimeIndex, n_bars: int, horizon: int,

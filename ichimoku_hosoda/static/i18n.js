@@ -142,6 +142,8 @@ const R=[ // [日本語, English, Tiếng Việt]
 ["手動 A 以降の半値水準","Midpoint level since manual A","Mức điểm giữa từ A thủ công"],
 ["日足の分析に失敗しました","Daily analysis failed","Phân tích dữ liệu ngày thất bại"],
 ["（0 以下のため対象外）"," (≤ 0, not applicable)"," (≤ 0, không áp dụng)"],
+["対象外（0 以下になるため）","n/a (would be ≤ 0)","không áp dụng (≤ 0)"],
+["対象外","n/a","không áp dụng"],
 ["）、重なりが最も厚いのは","), the strongest overlap is","), trùng nhiều nhất là"],
 ["／現在は第三波動進行中）"," / third wave in progress)"," / sóng thứ ba đang diễn ra)"],
 ["／遅行スパン vs 実線"," / lagging span vs price"," / đường trễ so với giá"],

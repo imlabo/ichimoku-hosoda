@@ -99,7 +99,7 @@ class AnalysisResult:
         for l in self.levels[:max_levels]:
             hits = "、".join(f"{h['n']}{u}目{h['what']}" for h in l.hits[:6])
             md.append(f"- {l.price:,.1f}（{(l.price/c-1)*100:+.1f}%） {l.source.split(' / ')[0]}  起点 {_dt(l.origin)}  "
-                      f"[{hits or '—'}]  もみ合い限界: 上 {l.upper_limit:,.1f} / 下 {l.lower_limit:,.1f}")
+                      f"[{hits or '—'}]  もみ合い限界: 上 {_lim(l.upper_limit)} / 下 {_lim(l.lower_limit)}")
         md.append("")
 
         # 時間の節目
@@ -192,8 +192,12 @@ class AnalysisResult:
         if self.levels:
             lv0 = self.levels[0]
             out.append(f"最有力の相場水準: {lv0.price:,.1f}（{lv0.source.split(' / ')[0]}、起点 {_dt(lv0.origin)}）。"
-                       f"この水準×2−極値 ＝ もみ合い限界 上 {lv0.upper_limit:,.1f} / 下 {lv0.lower_limit:,.1f}")
+                       f"この水準×2−極値 ＝ もみ合い限界 上 {_lim(lv0.upper_limit)} / 下 {_lim(lv0.lower_limit)}")
         return out
+
+
+def _lim(v: float) -> str:
+    return "対象外" if v != v else f"{v:,.1f}"
 
 
 def _jp(s: str) -> str:
