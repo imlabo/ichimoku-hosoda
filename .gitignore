@@ -6,3 +6,8 @@ dist/
 *.zip
 screener/research-*.log
 screener/last_run-*.log
+# スクリーナーの出力は screener-data ブランチへ
+screener/shards/
+screener/watchlist.json
+screener/watchlist.md
+screener/daily/

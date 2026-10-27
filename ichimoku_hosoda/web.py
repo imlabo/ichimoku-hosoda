@@ -94,8 +94,9 @@ def index():
     return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
+# データは screener-data ブランチ。main へのコミットは Render の再ビルドを起こすため分けている。
 WATCHLIST_RAW = ("https://raw.githubusercontent.com/imlabo/ichimoku-hosoda/"
-                 "main/screener/watchlist.json")
+                 "screener-data/screener/watchlist.json")
 _wl_cache: tuple[float, list] | None = None
 
 

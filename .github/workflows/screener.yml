@@ -1,5 +1,6 @@
 # 置き場所: .github/workflows/screener.yml
 # 市場ごとに別ジョブ（別ランナー＝別IP）で取得 → merge で1本の監視リストにまとめる。
+# 出力は screener-data ブランチへ。main に置くと毎日の更新が Render の再ビルドを起こすため。
 name: daily-screener
 
 on:
@@ -31,30 +32,11 @@ jobs:
         run: |
           set -o pipefail
           python -u screener/screener.py 2>&1 | tee "screener/last_run-${{ matrix.market }}.log"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: shard-${{ matrix.market }}
-          path: |
-            screener/shards/
-            screener/last_run-*.log
-          retention-days: 7
-      - name: commit shard
+      - name: publish shard
         if: always()
         run: |
-          git config user.name "screener-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -f screener/shards screener/last_run-*.log
-          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
-          git commit -m "screener shard(${{ matrix.market }}): $(date -u +%F)"
-          for i in 1 2 3 4 5; do
-            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
-              exit 0
-            fi
-            echo "push に失敗。15秒待って再試行 ($i/5)"
-            sleep 15
-          done
-          exit 1
+          screener/publish.sh "shard(${{ matrix.market }}): $(date -u +%F)" \
+            screener/shards "screener/last_run-${{ matrix.market }}.log"
 
   merge:
     needs: shard
@@ -62,33 +44,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: シャードのコミットを取り込む
-        run: git fetch origin main && git reset --hard origin/main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd lxml
+      - name: fetch shards from data branch
+        run: |
+          git fetch origin screener-data --depth 1
+          git checkout origin/screener-data -- screener/shards screener/watchlist.json 2>/dev/null || \
+            git checkout origin/screener-data -- screener/shards
+          ls -la screener/shards
       - name: merge shards
         env:
           SCREENER_MODE: merge
         run: |
           set -o pipefail
           python -u screener/screener.py 2>&1 | tee screener/last_run.log
-      - name: commit watchlist
+      - name: publish watchlist
         if: always()
         run: |
-          git config user.name "screener-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add -f screener/watchlist.json screener/watchlist.md screener/daily screener/last_run.log
-          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
-          git commit -m "screener: $(date -u +%F)"
-          for i in 1 2 3 4 5; do
-            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
-              exit 0
-            fi
-            echo "push に失敗。15秒待って再試行 ($i/5)"
-            sleep 15
-          done
-          exit 1
+          screener/publish.sh "screener: $(date -u +%F)" \
+            screener/watchlist.json screener/watchlist.md screener/daily screener/last_run.log
