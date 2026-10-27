@@ -5,3 +5,4 @@ out_*/
 dist/
 *.zip
 screener/research-*.log
+screener/last_run-*.log

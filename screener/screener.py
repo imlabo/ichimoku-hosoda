@@ -23,6 +23,9 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import limits  # noqa: E402
+
 # ---------------- 条件（ここを調整） ----------------
 VOL_MULT = 3.0          # 当日出来高 >= 20日平均 × VOL_MULT（上昇・下落 共通）
 # 下落側（セリング・クライマックス候補）
@@ -39,6 +42,20 @@ EXPIRE_DAYS = 26        # 監視リストから外すまでの日柄
 BASIC_NUMBERS = (9, 17, 26)
 MIN_DATA_RATE = 0.5     # 株価取得率がこれ未満なら「0件」ではなく異常終了させる
 
+# ストップ高・踏み上げ候補（squeeze）
+# しきい値は screener/research_limitup.py による過去1年・全763イベントの集計から決めた。
+# 全体の翌日継続率 16.5% に対し、ストップ高履歴あり 24.0% / ATR>=7% 21.8% /
+# 当日出来高2倍未満 23.9% / 履歴×三役好転×ATR 30.6%。
+SQ_ATR_PCT = 7.0            # ATR14 / 終値（%）
+SQ_PRIOR_DAYS = 20          # ストップ高履歴を見る営業日数
+SQ_QUIET_VOL = 2.0          # ストップ高当日の出来高 / 20日平均（これ未満だと継続しやすい）
+SQ_RET20 = 15.0             # 20日リターン（%）
+SQ_TURNOVER_MAX = 50e8      # 20日平均売買代金がこれを超えると継続率が落ちる（50億円）
+SQ_TURNOVER_SMALL = 20e8    # 20億円以下は継続率が高め
+SQ_LOOKBACK = 3             # 何営業日前までのストップ高を拾うか
+SQ_EXPIRE_DAYS = 7          # squeeze は短命なので暦日7日で落とす
+SQ_MARGIN_TOP = int(os.environ.get("SQ_MARGIN_TOP", "20"))  # 需給（信用残）を取る上位件数（シャードごと）
+
 # 対象市場。環境変数 SCREENER_MARKETS でシャードごとに切り替える（カンマ区切り）。
 # Yahoo の時間あたりリクエスト上限に当たるため、1ジョブ1市場に分けて並列実行する。
 MARKETS = tuple(x for x in os.environ.get("SCREENER_MARKETS", "プライム").split(",") if x)
@@ -51,6 +68,7 @@ ROOT = Path(__file__).resolve().parent
 OUT_JSON = ROOT / "watchlist.json"
 OUT_MD = ROOT / "watchlist.md"
 DAILY_DIR = ROOT / "daily"
+SHARD_DIR = ROOT / "shards"
 # JPX「東証上場銘柄一覧」。2026年に .xls → .xlsx へ変わったため両方試す
 JPX_URLS = [
     "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
@@ -95,12 +113,18 @@ def load_universe() -> pd.DataFrame:
     print(f"columns: {list(df.columns)}", file=sys.stderr)
     c_code = _pick_col(df, "コード")
     c_name = _pick_col(df, "銘柄名")
-    c_market = _pick_col(df, "市場", "区分")
-    df = df.rename(columns={c_code: "code", c_name: "name", c_market: "market"})
+    c_market = _pick_col(df, "市場・商品区分", "市場")
+    c_sector = next((c for c in df.columns if "33業種区分" in str(c)), None)
+    ren = {c_code: "code", c_name: "name", c_market: "market"}
+    if c_sector is not None:
+        ren[c_sector] = "sector"
+    df = df.rename(columns=ren)
+    if "sector" not in df.columns:
+        df["sector"] = ""
     df["code"] = df["code"].astype(str).str.strip()
     df = df[df["market"].astype(str).str.contains("|".join(MARKETS))]
     df = df[df["code"].str.fullmatch(r"[0-9A-Za-z]{4}")]
-    return df[["code", "name", "market"]].reset_index(drop=True)
+    return df[["code", "name", "market", "sector"]].reset_index(drop=True)
 
 
 def make_session():
@@ -275,6 +299,176 @@ def evaluate(code: str, name: str, market: str, d: pd.DataFrame,
     }
 
 
+def _atr_pct(d: pd.DataFrame, i: int, n: int = 14) -> float | None:
+    h, l, c = d["High"], d["Low"], d["Close"]
+    tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
+    v = tr.rolling(n).mean().iloc[i]
+    px = float(c.iloc[i])
+    return None if (pd.isna(v) or not px) else round(float(v) / px * 100, 2)
+
+
+def find_squeeze(d: pd.DataFrame) -> list[tuple[pd.Timestamp, str]]:
+    """ストップ高の継続候補と、その前兆候補を (日付, 種別) で返す。
+
+    continuation: 直近 SQ_LOOKBACK 営業日にストップ高があった（翌日の継続を狙う）
+    precursor:    まだストップ高していないが、履歴と ATR が揃っている
+    """
+    flags = limits.limit_flags(d)
+    lu = flags["limit_up"].fillna(False)
+    recent = d.index[-SQ_LOOKBACK:]
+    hits = [(t, "continuation") for t in lu[lu].index if t in recent]
+    if hits:
+        return hits
+
+    i = len(d) - 1
+    prior = int(lu.iloc[max(0, i - SQ_PRIOR_DAYS):i].sum())
+    atr = _atr_pct(d, i)
+    if prior >= 1 and atr is not None and atr >= SQ_ATR_PCT:
+        return [(d.index[i], "precursor")]
+    return []
+
+
+def evaluate_squeeze(code: str, name: str, market: str, sector: str,
+                     d: pd.DataFrame, spike: pd.Timestamp, kind: str) -> dict:
+    ich = ichimoku(d)
+    flags = limits.limit_flags(d)
+    lu = flags["limit_up"].fillna(False)
+    i = len(d) - 1
+    i_spike = d.index.get_loc(spike)
+    days_since = i - i_spike
+
+    c_last = float(d["Close"].iloc[-1])
+    avg20_prev = float(d["Volume"].rolling(20).mean().shift(1).iloc[i_spike])
+    vol_ratio = round(float(d["Volume"].iloc[i_spike]) / avg20_prev, 2) if avg20_prev else None
+    turnover = float((d["Close"] * d["Volume"]).rolling(20).mean().iloc[i])
+    atr = _atr_pct(d, i)
+    ret20 = round(c_last / float(d["Close"].iloc[i - 20]) * 100 - 100, 2) if i >= 20 else None
+    # 起点日より前のストップ高回数。起点日自身は数えない（continuation で必ず1以上になるのを防ぐ）
+    prior_lu = int(lu.iloc[max(0, i_spike - SQ_PRIOR_DAYS):i_spike].sum())
+
+    above_tenkan = c_last > float(ich["tenkan"].iloc[-1])
+    above_kijun = c_last > float(ich["kijun"].iloc[-1])
+    cloud_top = float(np.nanmax([ich["senkou_a"].iloc[-1], ich["senkou_b"].iloc[-1]]))
+    cloud_bot = float(np.nanmin([ich["senkou_a"].iloc[-1], ich["senkou_b"].iloc[-1]]))
+    cloud_pos = "above" if c_last > cloud_top else ("in" if c_last >= cloud_bot else "below")
+    chikou_up = c_last > float(d["Close"].iloc[-27]) if len(d) > 27 else False
+    sanyaku = bool(above_tenkan and above_kijun and cloud_pos == "above" and chikou_up)
+    hidara_hit = next((n for n in BASIC_NUMBERS if abs(days_since - n) <= 1), None)
+
+    # 値動きスコア（過去1年の継続率の差をもとに配点）
+    score = 0
+    score += 3 if prior_lu >= 1 else 0                      # 24.0% vs 12.1%
+    score += 2 if (atr or 0) >= SQ_ATR_PCT else 0           # 21.8% vs 10.8%（4%未満）
+    score += 2 if (vol_ratio is not None and vol_ratio < SQ_QUIET_VOL) else 0   # 23.9%
+    score += 2 if sanyaku else 0                            # 18.2% vs 15.4%、重ねると効く
+    score += 1 if (ret20 or 0) >= SQ_RET20 else 0           # 19.0%
+    score += 1 if turnover <= SQ_TURNOVER_SMALL else 0      # 17.7%
+    score -= 2 if turnover > SQ_TURNOVER_MAX else 0         # 10.2%
+    score -= 1 if "プライム" in str(market) else 0            # 9.5% vs 20.7%/17.0%
+    score += {"above": 1, "in": 0, "below": -1}[cloud_pos]
+    score += 1 if hidara_hit else 0
+
+    return {
+        "code": code, "name": name, "market": market, "sector": sector or "",
+        "direction": "squeeze", "kind": kind,
+        "spike_date": spike.strftime("%Y-%m-%d"),
+        "spike_chg_pct": round(float(d["Close"].pct_change().iloc[i_spike] * 100), 2),
+        "spike_vol_mult": vol_ratio,
+        "limit_pct": round(float(flags["limit_pct"].iloc[i_spike]), 2),
+        "last_date": d.index[-1].strftime("%Y-%m-%d"),
+        "close": c_last,
+        "days_since_spike": days_since,
+        "prior_limitups_20d": prior_lu,
+        "atr14_pct": atr,
+        "ret_20d": ret20,
+        "turnover20_oku": round(turnover / 1e8, 2),
+        "above_tenkan": above_tenkan, "above_kijun": above_kijun,
+        "cloud_position": cloud_pos, "chikou_bullish": chikou_up,
+        "sanyaku": sanyaku, "basic_number_hit": hidara_hit,
+        "quiet_volume": bool(vol_ratio is not None and vol_ratio < SQ_QUIET_VOL),
+        "price_score": score, "score": score,
+        "avg_turnover_20d": turnover,
+    }
+
+
+def add_margin(rows: list[dict], data: dict[str, pd.DataFrame], top: int = SQ_MARGIN_TOP) -> None:
+    """上位候補にだけ信用残を取得して需給スコアを足す（株探を1銘柄ずつ叩くため件数を絞る）。
+
+    売残 > 買残（貸借倍率 < 1）、売残の増加、売り方の含み損は踏み上げ余地を示す。
+    含み損の推定は ichimoku_hosoda.margin.estimate_pl をそのまま使う。
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from ichimoku_hosoda import margin as mg
+    except Exception as e:
+        print(f"margin モジュールを読めません: {e}", file=sys.stderr)
+        return
+
+    targets = sorted(rows, key=lambda x: -x["price_score"])[:top]
+    print(f"信用残を取得: {len(targets)} 銘柄", file=sys.stderr)
+    for n, x in enumerate(targets, 1):
+        try:
+            m = mg.fetch_margin(x["code"], weeks=30)
+            if "error" in m:
+                x["margin_note"] = "取得失敗"
+                continue
+            rs = [r for r in m.get("rows", []) if r.get("sell") is not None and r.get("buy") is not None]
+            if not rs:
+                x["margin_note"] = "データなし"
+                continue
+            last = rs[-1]
+            ratio = last.get("ratio")
+            if ratio is None and last.get("sell"):
+                ratio = last["buy"] / last["sell"]
+            sell_chg = None
+            if len(rs) >= 5 and rs[-5].get("sell"):
+                sell_chg = round(last["sell"] / rs[-5]["sell"] * 100 - 100, 1)
+
+            sell_pl = None
+            try:
+                pl = mg.estimate_pl(m, data.get(x["code"]))
+                if pl and pl.get("sell"):
+                    sell_pl = pl["sell"]["pl"]      # 売り方の含み益率（% / マイナスなら含み損）
+            except Exception:
+                pass
+
+            add = 0
+            if ratio is not None and ratio < 1:
+                add += 2                            # 売残 > 買残
+            if sell_chg is not None and sell_chg >= 20:
+                add += 1                            # 直近4週で売残が2割以上増えた
+            if sell_pl is not None:
+                if sell_pl <= -10:
+                    add += 3                        # 売り方が大きく含み損
+                elif sell_pl < 0:
+                    add += 2
+            x.update({"margin_date": last.get("date"),
+                      "margin_sell": last.get("sell"), "margin_buy": last.get("buy"),
+                      "margin_ratio": round(ratio, 2) if ratio is not None else None,
+                      "margin_sell_chg4w": sell_chg,
+                      "margin_sell_pl": sell_pl,
+                      "margin_score": add,
+                      "score": x["price_score"] + add})
+        except Exception as e:
+            x["margin_note"] = f"例外: {type(e).__name__}"
+        finally:
+            time.sleep(1.2)                         # 株探への負荷を抑える
+        if n % 10 == 0:
+            print(f"  信用残 {n}/{len(targets)}", file=sys.stderr)
+
+
+def add_theme(rows: list[dict]) -> None:
+    """同業種で複数ヒットしていればテーマ化の兆候として加点"""
+    from collections import Counter
+    cnt = Counter(x.get("sector", "") for x in rows if x.get("sector"))
+    for x in rows:
+        n = cnt.get(x.get("sector", ""), 0)
+        x["sector_hits"] = n
+        if n >= 2:
+            x["score"] = x.get("score", x["price_score"]) + 1
+            x["theme"] = True
+
+
 def screen() -> tuple[list[dict], str]:
     uni = load_universe()
     print(f"universe: {len(uni)} 銘柄", file=sys.stderr)
@@ -288,6 +482,7 @@ def screen() -> tuple[list[dict], str]:
         )
     today = None
     found: list[dict] = []
+    sq: list[dict] = []
     for _, row in uni.iterrows():
         d = data.get(row["code"])
         if d is None:
@@ -299,6 +494,17 @@ def screen() -> tuple[list[dict], str]:
         today = d.index[-1].strftime("%Y-%m-%d")
         for spike, direction in find_spike_days(d):
             found.append(evaluate(row["code"], row["name"], row["market"], d, spike, direction))
+        for spike, kind in find_squeeze(d):
+            sq.append(evaluate_squeeze(row["code"], row["name"], row["market"],
+                                       row.get("sector", ""), d, spike, kind))
+
+    if sq:
+        add_theme(sq)
+        add_margin(sq, data)
+        print(f"squeeze: {len(sq)} 件（継続 "
+              f"{sum(1 for x in sq if x['kind'] == 'continuation')} / 前兆 "
+              f"{sum(1 for x in sq if x['kind'] == 'precursor')}）", file=sys.stderr)
+    found += sq
     return found, today or dt.date.today().isoformat()
 
 
@@ -323,7 +529,8 @@ def merge_watchlist(new: list[dict], today: str) -> list[dict]:
     kept = []
     for x in by_key.values():
         age = (pd.Timestamp(today) - pd.Timestamp(x["spike_date"])).days
-        if age <= EXPIRE_DAYS * 1.5:  # 暦日換算でざっくり 26 営業日
+        limit = SQ_EXPIRE_DAYS if x["direction"] == "squeeze" else EXPIRE_DAYS * 1.5
+        if age <= limit:  # 暦日換算。squeeze は短命なので短く
             kept.append(x)
     kept.sort(key=lambda x: (-x["score"], x["days_since_spike"]))
     return kept
@@ -352,30 +559,103 @@ def _table(rows: list[dict], direction: str) -> list[str]:
     return out
 
 
+def _squeeze_table(rows: list[dict]) -> list[str]:
+    if not rows:
+        return ["該当なし"]
+    out = ["| コード | 銘柄 | 市場 | 種別 | 起点日 | 制限値幅 | 当日出来高 | ATR | 20日騰落 | 代金 | 履歴 | 三役 | 貸借倍率 | 売残4週 | 売り方損益 | 業種 | スコア |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    ok = lambda b: "○" if b else "－"
+    kind = {"continuation": "継続", "precursor": "前兆"}
+    for x in rows:
+        mk = str(x.get("market", "")).replace("プライム（内国株式）", "プライム") \
+            .replace("スタンダード（内国株式）", "スタンダード").replace("グロース（内国株式）", "グロース")
+        out.append(
+            f"| {x['code']} | {x['name']} | {mk[:6]} | {kind.get(x.get('kind'), '')} "
+            f"| {x['spike_date']} | {x.get('limit_pct', '－')}% "
+            f"| ×{x.get('spike_vol_mult') or '－'} | {x.get('atr14_pct') or '－'}% "
+            f"| {x.get('ret_20d') or '－'}% | {x.get('turnover20_oku') or '－'}億 "
+            f"| {x.get('prior_limitups_20d', 0)}回 | {ok(x.get('sanyaku'))} "
+            f"| {x.get('margin_ratio') if x.get('margin_ratio') is not None else '－'} "
+            f"| {str(x.get('margin_sell_chg4w')) + '%' if x.get('margin_sell_chg4w') is not None else '－'} "
+            f"| {str(x.get('margin_sell_pl')) + '%' if x.get('margin_sell_pl') is not None else '－'} "
+            f"| {str(x.get('sector', ''))[:6]}{'★' if x.get('theme') else ''} | {x['score']} |")
+    return out
+
+
 def to_markdown(wl: list[dict], today: str) -> str:
     down = [x for x in wl if x["direction"] == "down"]
     up = [x for x in wl if x["direction"] == "up"]
-    lines = [f"# 大出来高 × 一目 監視リスト（{today} 引け後）", "",
-             f"## 下落（底打ち候補） {len(down)} 件", ""]
+    sq = [x for x in wl if x["direction"] == "squeeze"]
+    lines = [f"# 大出来高 × 一目 監視リスト（{today} 引け後）", ""]
+
+    lines += [f"## ストップ高・踏み上げ候補 {len(sq)} 件", ""]
+    lines += _squeeze_table(sq)
+    lines += ["", f"## 下落（底打ち候補） {len(down)} 件", ""]
     lines += _table(down, "down")
     lines += ["", f"## 上昇（ブレイク候補） {len(up)} 件", ""]
     lines += _table(up, "up")
-    lines += ["", f"- {SCORE_NOTE}",
+    lines += ["",
+              "### ストップ高候補のスコア",
+              "履歴（直近20日にストップ高）+3 / ATR14が7%以上 +2 / 当日出来高が20日平均の2倍未満 +2 / "
+              "三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 -2 / プライム -1 / "
+              "雲上+1・雲下-1 / 基本数値一致 +1",
+              "需給: 貸借倍率1未満（売残>買残）+2 / 売残が4週で20%以上増 +1 / 売り方が含み損 +2（-10%以下は+3）",
+              "テーマ: 同業種で2件以上ヒット +1（業種名に★）",
+              "",
+              "配点は過去1年・ストップ高763件の翌日継続率から決めています（全体16.5% → 履歴あり24.0% / "
+              "ATR7%以上21.8% / 当日出来高2倍未満23.9% / 履歴×三役×ATR 30.6%）。"
+              "スコアは確度ではなく条件の重なり具合を表すものとして見てください。",
+              "",
+              f"- {SCORE_NOTE}",
               "- 下落側の確認＝急落後に陽線が出たか。上昇側の確認＝急騰日の終値以上を維持しているか",
-              "- 急落／急騰日から約26営業日で自動除外。投資助言ではありません。"]
+              "- 急落／急騰日から約26営業日、ストップ高候補は7日で自動除外。投資助言ではありません。"]
     return "\n".join(lines)
 
 
+def load_shards() -> tuple[list[dict], str]:
+    """市場ごとのシャード結果を読み込んで結合する"""
+    found: list[dict] = []
+    days: list[str] = []
+    files = sorted(SHARD_DIR.glob("*.json")) if SHARD_DIR.exists() else []
+    if not files:
+        raise SystemExit("シャードの結果がありません（screener/shards/*.json）")
+    for f in files:
+        obj = json.loads(f.read_text(encoding="utf-8"))
+        found += obj.get("found", [])
+        if obj.get("today"):
+            days.append(obj["today"])
+        print(f"shard {f.stem}: {len(obj.get('found', []))} 件 / {obj.get('today')}", file=sys.stderr)
+    return found, max(days) if days else dt.date.today().isoformat()
+
+
 if __name__ == "__main__":
-    new, today = screen()
+    # SCREENER_MODE: all（単独実行）/ shard（市場ごとに取得して中間ファイルへ）/ merge（シャードを結合）
+    mode = os.environ.get("SCREENER_MODE", "all")
+
+    if mode == "merge":
+        new, today = load_shards()
+    else:
+        new, today = screen()
+
+    if mode == "shard":
+        SHARD_DIR.mkdir(exist_ok=True)
+        tag = "-".join(MARKETS) or "all"
+        (SHARD_DIR / f"{tag}.json").write_text(
+            json.dumps({"today": today, "markets": list(MARKETS), "found": new},
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"shard {tag}: {len(new)} 件 / {today}", file=sys.stderr)
+        raise SystemExit(0)
+
     DAILY_DIR.mkdir(exist_ok=True)
     (DAILY_DIR / f"{today}.json").write_text(json.dumps(new, ensure_ascii=False, indent=2), encoding="utf-8")
     wl = merge_watchlist(new, today)
     OUT_JSON.write_text(json.dumps(wl, ensure_ascii=False, indent=2), encoding="utf-8")
     OUT_MD.write_text(to_markdown(wl, today), encoding="utf-8")
     nd = sum(1 for x in new if x["direction"] == "down")
-    nu = len(new) - nd
+    nq = sum(1 for x in new if x["direction"] == "squeeze")
+    nu = len(new) - nd - nq
     wd = sum(1 for x in wl if x["direction"] == "down")
-    wu = len(wl) - wd
-    print(f"{today}: 新規 {len(new)} 件（下落 {nd} / 上昇 {nu}）"
-          f" / 監視リスト {len(wl)} 件（下落 {wd} / 上昇 {wu}）")
+    wq = sum(1 for x in wl if x["direction"] == "squeeze")
+    wu = len(wl) - wd - wq
+    print(f"{today}: 新規 {len(new)} 件（下落 {nd} / 上昇 {nu} / ストップ高 {nq}）"
+          f" / 監視リスト {len(wl)} 件（下落 {wd} / 上昇 {wu} / ストップ高 {wq}）")

@@ -180,8 +180,47 @@ def screener():
             "<th>転換線</th><th>基準線</th><th>雲</th><th>遅行</th><th>日柄</th><th>スコア</th>"
             f"</tr></thead><tbody>{cells}</tbody></table></div>")
 
+    def sq_table(rows):
+        if not rows:
+            return '<p class="none">該当なし</p>'
+        KIND = {"continuation": "継続", "precursor": "前兆"}
+        def pct(v, suf="%"):
+            return f"{v}{suf}" if v is not None else "\u2014"
+        def mk(v):
+            return (str(v).replace("プライム（内国株式）", "プライム")
+                    .replace("スタンダード（内国株式）", "スタンダード")
+                    .replace("グロース（内国株式）", "グロース"))
+        cells = "".join(
+            f"<tr><td class=\"code\">{_html.escape(str(x['code']))}</td>"
+            f"<td>{_html.escape(str(x['name']))}</td>"
+            f"<td class=\"sm\">{_html.escape(mk(x.get('market', ''))[:8])}</td>"
+            f"<td class=\"sm\">{KIND.get(x.get('kind'), '')}</td>"
+            f"<td>{_html.escape(str(x['spike_date']))}</td>"
+            f"<td class=\"num\">{pct(x.get('limit_pct'))}</td>"
+            f"<td class=\"num\">\u00d7{x.get('spike_vol_mult') if x.get('spike_vol_mult') is not None else '\u2014'}</td>"
+            f"<td class=\"num\">{pct(x.get('atr14_pct'))}</td>"
+            f"<td class=\"num {'upc' if (x.get('ret_20d') or 0) > 0 else 'dn'}\">{pct(x.get('ret_20d'))}</td>"
+            f"<td class=\"num\">{pct(x.get('turnover20_oku'), '億')}</td>"
+            f"<td class=\"num\">{x.get('prior_limitups_20d', 0)}</td>"
+            f"<td>{mark(x.get('sanyaku'))}</td>"
+            f"<td class=\"num\">{x.get('margin_ratio') if x.get('margin_ratio') is not None else '\u2014'}</td>"
+            f"<td class=\"num\">{pct(x.get('margin_sell_chg4w'))}</td>"
+            f"<td class=\"num {'dn' if (x.get('margin_sell_pl') or 0) < 0 else ''}\">{pct(x.get('margin_sell_pl'))}</td>"
+            f"<td class=\"sm\">{_html.escape(str(x.get('sector', ''))[:6])}"
+            f"{'<span class=\"o\">\u2605</span>' if x.get('theme') else ''}</td>"
+            f"<td class=\"num score\">{x['score']}</td></tr>"
+            for x in rows)
+        return (
+            "<div class=\"wrap\"><table><thead><tr>"
+            "<th>コード</th><th>銘柄</th><th>市場</th><th>種別</th><th>起点日</th>"
+            "<th>制限値幅</th><th>当日出来高</th><th>ATR</th><th>20日騰落</th><th>代金</th>"
+            "<th>履歴</th><th>三役</th><th>貸借倍率</th><th>売残4週</th><th>売り方損益</th>"
+            "<th>業種</th><th>スコア</th>"
+            f"</tr></thead><tbody>{cells}</tbody></table></div>")
+
     down = [x for x in wl if x["direction"] == "down"]
     up = [x for x in wl if x["direction"] == "up"]
+    sq = [x for x in wl if x["direction"] == "squeeze"]
 
     return f"""<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
@@ -211,6 +250,7 @@ th {{ background:color-mix(in srgb, var(--card) 88%, var(--fg));
   font-weight:600; font-size:.78rem; color:var(--muted); }}
 tbody tr:last-child td {{ border-bottom:none; }}
 .num {{ text-align:right; font-variant-numeric:tabular-nums; }}
+.sm {{ font-size:.78rem; color:var(--muted); }}
 .code {{ font-variant-numeric:tabular-nums; color:var(--accent); font-weight:600; }}
 .score {{ font-weight:700; }}
 .upc {{ color:var(--up); }} .dn {{ color:var(--dn); }}
@@ -222,8 +262,11 @@ tbody tr:last-child td {{ border-bottom:none; }}
 a {{ color:var(--accent); }}
 </style></head><body><div class="page">
 <h1>大出来高 × 一目 監視リスト</h1>
-<p class="asof">{_html.escape(asof) or "データなし"} 引け後 / 東証プライム / 毎営業日 17:30 JST 更新
+<p class="asof">{_html.escape(asof) or "データなし"} 引け後 / 東証プライム・スタンダード・グロース / 毎営業日 17:30 JST 更新
  &middot; <a href="/">節目判定にもどる</a></p>
+
+<h2>ストップ高・踏み上げ候補<span class="n">{len(sq)} 件</span></h2>
+{sq_table(sq)}
 
 <h2>下落（底打ち候補）<span class="n">{len(down)} 件</span></h2>
 {table(down, "down")}
@@ -232,10 +275,13 @@ a {{ color:var(--accent); }}
 {table(up, "up")}
 
 <div class="note"><ul>
-<li>抽出条件: 出来高が20日平均の3倍以上 &times; 下落側は7%超の下落または大陰線かつ20日高値から15%以上下落／上昇側は7%超の上昇または大陽線かつ20日高値を更新</li>
+<li><b>ストップ高候補</b>の配点: 直近20日にストップ高の履歴 +3 / ATR14が7%以上 +2 / ストップ高当日の出来高が20日平均の2倍未満 +2 / 三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 &minus;2 / プライム &minus;1 / 雲上+1・雲下&minus;1 / 基本数値一致 +1。需給は 貸借倍率1未満（売残&gt;買残）+2 / 売残が4週で20%以上増 +1 / 売り方が含み損 +2（&minus;10%以下は+3）。同業種で2件以上ヒットすると +1（業種名に★）</li>
+<li>この配点は過去1年・ストップ高763件の<b>翌日継続率</b>から決めています。全体16.5%に対し、履歴あり24.0% / ATR7%以上21.8% / 当日出来高2倍未満23.9% / 履歴&times;三役好転&times;ATR 30.6%。<b>最良の組み合わせでも3割程度</b>なので、スコアは確度ではなく条件の重なり具合として見てください</li>
+<li>「継続」は直近3営業日にストップ高があった銘柄、「前兆」はストップ高履歴とATRの条件が揃っているがまだストップ高していない銘柄</li>
+<li>抽出条件（下落・上昇）: 出来高が20日平均の3倍以上 &times; 下落側は7%超の下落または大陰線かつ20日高値から15%以上下落／上昇側は7%超の上昇または大陽線かつ20日高値を更新</li>
 <li>スコア: 確認+2 / 安値維持+2（割れ-3） / 転換線上+2 / 基準線上+1 / 遅行好転+1 / 基本数値一致+1 / 雲上+1・雲下-1</li>
 <li>確認: 下落側は急落後に陽線が出たか、上昇側は急騰日の終値以上を維持しているか</li>
-<li>急落／急騰日から約26営業日で自動除外</li>
+<li>急落／急騰日から約26営業日、ストップ高候補は7日で自動除外</li>
 <li>本ページは個人的な研究用の集計であり、投資助言ではありません。売買の判断はご自身の責任でお願いします。</li>
 </ul></div>
 </div></body></html>"""

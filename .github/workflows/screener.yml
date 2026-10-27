@@ -1,4 +1,5 @@
 # 置き場所: .github/workflows/screener.yml
+# 市場ごとに別ジョブ（別ランナー＝別IP）で取得 → merge で1本の監視リストにまとめる。
 name: daily-screener
 
 on:
@@ -10,46 +11,76 @@ permissions:
   contents: write
 
 jobs:
-  screen:
+  shard:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        market: [プライム, スタンダード, グロース]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd lxml
+      - name: screen
+        env:
+          SCREENER_MODE: shard
+          SCREENER_MARKETS: ${{ matrix.market }}
+        run: python -u screener/screener.py 2>&1 | tee "screener/last_run-${{ matrix.market }}.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shard-${{ matrix.market }}
+          path: |
+            screener/shards/
+            screener/last_run-*.log
+          retention-days: 7
+      - name: commit shard
+        if: always()
+        run: |
+          git config user.name "screener-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -f screener/shards screener/last_run-*.log
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "screener shard(${{ matrix.market }}): $(date -u +%F)"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push に失敗。15秒待って再試行 ($i/5)"
+            sleep 15
+          done
+          exit 1
+
+  merge:
+    needs: shard
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd
-
-      # 失敗しても後続で last_run.log を commit したいので continue-on-error
-      - name: run screener
-        id: run
-        continue-on-error: true
-        run: |
-          set -o pipefail
-          python -u screener/screener.py 2>&1 | tee screener/last_run.log
-
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd lxml
+      - name: merge shards
+        env:
+          SCREENER_MODE: merge
+        run: python -u screener/screener.py 2>&1 | tee screener/last_run.log
       - name: commit watchlist
         if: always()
         run: |
           git config user.name "screener-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add screener/watchlist.json screener/watchlist.md screener/daily screener/last_run.log
-          if git diff --cached --quiet; then
-            echo "変更なし"; exit 0
-          fi
+          git add -f screener/watchlist.json screener/watchlist.md screener/daily screener/last_run.log
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
           git commit -m "screener: $(date -u +%F)"
-          # 実行中に別のコミットが入ると push が弾かれるのでリベースして再試行
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5; do
             if git pull --rebase --autostash origin main && git push origin HEAD:main; then
               exit 0
             fi
-            echo "push に失敗。10秒待って再試行 ($i/3)"
-            sleep 10
+            echo "push に失敗。15秒待って再試行 ($i/5)"
+            sleep 15
           done
-          echo "push に3回失敗しました"
-          exit 1
-
-      - name: fail if screener failed
-        if: steps.run.outcome == 'failure'
-        run: |
-          echo "screener が異常終了しました。screener/last_run.log を確認してください。"
           exit 1
