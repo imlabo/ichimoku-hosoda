@@ -28,7 +28,9 @@ jobs:
         env:
           SCREENER_MODE: shard
           SCREENER_MARKETS: ${{ matrix.market }}
-        run: python -u screener/screener.py 2>&1 | tee "screener/last_run-${{ matrix.market }}.log"
+        run: |
+          set -o pipefail
+          python -u screener/screener.py 2>&1 | tee "screener/last_run-${{ matrix.market }}.log"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -60,6 +62,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: シャードのコミットを取り込む
+        run: git fetch origin main && git reset --hard origin/main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -67,7 +73,9 @@ jobs:
       - name: merge shards
         env:
           SCREENER_MODE: merge
-        run: python -u screener/screener.py 2>&1 | tee screener/last_run.log
+        run: |
+          set -o pipefail
+          python -u screener/screener.py 2>&1 | tee screener/last_run.log
       - name: commit watchlist
         if: always()
         run: |
