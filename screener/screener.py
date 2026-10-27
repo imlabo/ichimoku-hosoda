@@ -432,16 +432,17 @@ def add_margin(rows: list[dict], data: dict[str, pd.DataFrame], top: int = SQ_MA
             except Exception:
                 pass
 
+            # 配点は research_margin.py の実測（過去のストップ高177件・サンプリング重み補正後、
+            # 基準15.4%）に合わせている。売残の「増加」は効くが、「売残>買残」「売り方の含み損」は
+            # 効かなかったので点を与えない（含み損は表示だけ残す）。
             add = 0
-            if ratio is not None and ratio < 1:
-                add += 2                            # 売残 > 買残
-            if sell_chg is not None and sell_chg >= 20:
-                add += 1                            # 直近4週で売残が2割以上増えた
-            if sell_pl is not None:
-                if sell_pl <= -10:
-                    add += 3                        # 売り方が大きく含み損
-                elif sell_pl < 0:
-                    add += 2
+            if sell_chg is not None:
+                if sell_chg >= 20:
+                    add += 2                        # 20.7%：売り方が積み上がっている
+                elif sell_chg <= -20:
+                    add -= 2                        # 8.9%：すでに買い戻されている
+            if ratio is not None and 1 <= ratio < 3:
+                add += 1                            # 19.8%
             x.update({"margin_date": last.get("date"),
                       "margin_sell": last.get("sell"), "margin_buy": last.get("buy"),
                       "margin_ratio": round(ratio, 2) if ratio is not None else None,
@@ -608,7 +609,9 @@ def to_markdown(wl: list[dict], today: str) -> str:
               "履歴（直近20日にストップ高）+3 / ATR14が7%以上 +2 / 当日出来高が20日平均の2倍未満 +2 / "
               "三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 -2 / プライム -1 / "
               "雲上+1・雲下-1 / 基本数値一致 +1",
-              "需給: 貸借倍率1未満（売残>買残）+2 / 売残が4週で20%以上増 +1 / 売り方が含み損 +2（-10%以下は+3）",
+              "需給: 売残が4週で+20%以上 +2 / 同-20%以下 -2 / 貸借倍率1〜3 +1"
+              "（売残177件の実測。基準15.4%に対し 売残増20.7% / 売残減8.9% / 倍率1〜3 19.8%。"
+              "『売残>買残』6.6%・『売り方の含み損』14.4% は効かなかったので配点せず、表示のみ）",
               "テーマ: 同業種で2件以上ヒット +1（業種名に★）",
               "",
               "配点は過去1年・ストップ高763件の翌日継続率から決めています（全体16.5% → 履歴あり24.0% / "
