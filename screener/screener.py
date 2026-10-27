@@ -498,6 +498,15 @@ def screen() -> tuple[list[dict], str]:
             sq.append(evaluate_squeeze(row["code"], row["name"], row["market"],
                                        row.get("sector", ""), d, spike, kind))
 
+    # 同一銘柄で複数日ヒットするので、起点日が最新のものだけ残す
+    if sq:
+        latest: dict[str, dict] = {}
+        for x in sq:
+            cur = latest.get(x["code"])
+            if cur is None or x["spike_date"] > cur["spike_date"]:
+                latest[x["code"]] = x
+        sq = list(latest.values())
+
     if sq:
         add_theme(sq)
         add_margin(sq, data)

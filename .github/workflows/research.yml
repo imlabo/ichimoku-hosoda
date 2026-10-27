@@ -8,12 +8,46 @@ on:
       period:
         description: 取得期間（yfinance の period）
         default: "1y"
+      only:
+        description: "margin / limitup / both"
+        default: "both"
 
 permissions:
   contents: write
 
 jobs:
+  margin:
+    if: inputs.only != 'limitup'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd lxml
+      - name: margin study
+        run: |
+          set -o pipefail
+          python -u screener/research_margin.py
+      - name: commit result
+        run: |
+          git config user.name "screener-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -f screener/research
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "research: margin vs continuation"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
   research:
+    if: inputs.only != 'margin'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
