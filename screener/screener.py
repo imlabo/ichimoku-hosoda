@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import time
 import datetime as dt
@@ -38,9 +39,9 @@ EXPIRE_DAYS = 26        # 監視リストから外すまでの日柄
 BASIC_NUMBERS = (9, 17, 26)
 MIN_DATA_RATE = 0.5     # 株価取得率がこれ未満なら「0件」ではなく異常終了させる
 
-# 対象市場。Yahoo の時間あたりリクエスト上限（未認証で約2,000件/時）に収めるため
-# プライムのみ（約1,600銘柄）に限定。広げるなら "スタンダード", "グロース" を追加
-MARKETS = ("プライム",)
+# 対象市場。環境変数 SCREENER_MARKETS でシャードごとに切り替える（カンマ区切り）。
+# Yahoo の時間あたりリクエスト上限に当たるため、1ジョブ1市場に分けて並列実行する。
+MARKETS = tuple(x for x in os.environ.get("SCREENER_MARKETS", "プライム").split(",") if x)
 CHUNK_SLEEP = 5             # チャンク間の待ち（秒）
 RATE_LIMIT_WAITS = (60, 180)  # 取得0件のときの待ち（秒）。Yahoo の制限は分単位で解けるため長めに
 TIME_BUDGET_SEC = 25 * 60   # これを超えたら取得を打ち切る（Actions の無料枠を守る）

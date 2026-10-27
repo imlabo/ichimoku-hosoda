@@ -4,3 +4,4 @@ out/
 out_*/
 dist/
 *.zip
+screener/research-*.log

@@ -1,0 +1,63 @@
+# 単発の調査用。手動実行のみ。市場ごとに別ジョブ（別ランナー＝別IP）で並列に取得する。
+name: research-limitup
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: 取得期間（yfinance の period）
+        default: "1y"
+
+permissions:
+  contents: write
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        market: [プライム, スタンダード, グロース]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd
+      - name: research
+        env:
+          SCREENER_MARKETS: ${{ matrix.market }}
+          RESEARCH_PERIOD: ${{ inputs.period }}
+        run: python -u screener/research_limitup.py 2>&1 | tee "screener/research-${{ matrix.market }}.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: research-${{ matrix.market }}
+          path: |
+            screener/research/
+            screener/research-*.log
+
+  collect:
+    needs: research
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/art
+      - name: commit results
+        run: |
+          mkdir -p screener/research
+          find /tmp/art -name '*.json' -exec cp {} screener/research/ \;
+          find /tmp/art -name 'research-*.log' -exec cp {} screener/ \;
+          git config user.name "screener-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add screener/research screener/research-*.log
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "research: limit-up features"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push origin HEAD:main && exit 0
+            sleep 10
+          done
+          exit 1
