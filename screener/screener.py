@@ -542,6 +542,16 @@ def merge_watchlist(new: list[dict], today: str) -> list[dict]:
         limit = SQ_EXPIRE_DAYS if x["direction"] == "squeeze" else EXPIRE_DAYS * 1.5
         if age <= limit:  # 暦日換算。squeeze は短命なので短く
             kept.append(x)
+    # squeeze は銘柄ごとに最新の起点だけ残す（前日までの記録が残って重複するのを防ぐ）
+    newest: dict[str, str] = {}
+    for x in kept:
+        if x["direction"] != "squeeze":
+            continue
+        if x["spike_date"] > newest.get(x["code"], ""):
+            newest[x["code"]] = x["spike_date"]
+    kept = [x for x in kept
+            if x["direction"] != "squeeze" or x["spike_date"] == newest[x["code"]]]
+
     kept.sort(key=lambda x: (-x["score"], x["days_since_spike"]))
     return kept
 
