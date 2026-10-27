@@ -16,7 +16,7 @@
       "spike_high": 2665.0,
       "spike_close": 2645.0,
       "last_date": "2026-10-27",
-      "close": 2481.0,
+      "close": 2478.0,
       "days_since_spike": 4,
       "confirmed": false,
       "level_held": false,
@@ -26,7 +26,7 @@
       "chikou_bullish": true,
       "basic_number_hit": null,
       "score": 0,
-      "avg_turnover_20d": 538120065.0
+      "avg_turnover_20d": 538400100.0
     },
     {
       "code": "4611",
@@ -34,13 +34,13 @@
       "market": "プライム（内国株式）",
       "direction": "up",
       "spike_date": "2026-10-27",
-      "spike_chg_pct": 19.45,
-      "spike_vol_mult": 5.5,
+      "spike_chg_pct": 19.52,
+      "spike_vol_mult": 7.6,
       "spike_low": 1615.0,
       "spike_high": 1943.0,
-      "spike_close": 1928.0,
+      "spike_close": 1929.0,
       "last_date": "2026-10-27",
-      "close": 1928.0,
+      "close": 1929.0,
       "days_since_spike": 0,
       "confirmed": true,
       "level_held": true,
@@ -50,7 +50,7 @@
       "chikou_bullish": true,
       "basic_number_hit": null,
       "score": 9,
-      "avg_turnover_20d": 127919010.0
+      "avg_turnover_20d": 140745180.0
     },
     {
       "code": "4784",
@@ -74,7 +74,7 @@
       "chikou_bullish": false,
       "basic_number_hit": null,
       "score": -4,
-      "avg_turnover_20d": 817278110.0
+      "avg_turnover_20d": 817438010.0
     },
     {
       "code": "5076",
@@ -88,7 +88,7 @@
       "spike_high": 2297.0,
       "spike_close": 2247.0,
       "last_date": "2026-10-27",
-      "close": 2386.0,
+      "close": 2388.0,
       "days_since_spike": 4,
       "confirmed": true,
       "level_held": false,
@@ -98,7 +98,7 @@
       "chikou_bullish": false,
       "basic_number_hit": null,
       "score": 0,
-      "avg_turnover_20d": 9763885657.5
+      "avg_turnover_20d": 9768326087.5
     },
     {
       "code": "590A",
@@ -106,13 +106,13 @@
       "market": "プライム（内国株式）",
       "direction": "down",
       "spike_date": "2026-10-27",
-      "spike_chg_pct": -11.07,
-      "spike_vol_mult": 4.4,
+      "spike_chg_pct": -11.65,
+      "spike_vol_mult": 4.5,
       "spike_low": 905.0,
       "spike_high": 944.0,
-      "spike_close": 916.0,
+      "spike_close": 910.0,
       "last_date": "2026-10-27",
-      "close": 916.0,
+      "close": 910.0,
       "days_since_spike": 0,
       "confirmed": false,
       "level_held": true,
@@ -122,7 +122,7 @@
       "chikou_bullish": false,
       "basic_number_hit": null,
       "score": 1,
-      "avg_turnover_20d": 218912265.0
+      "avg_turnover_20d": 219649065.0
     },
     {
       "code": "7970",
@@ -130,13 +130,13 @@
       "market": "プライム（内国株式）",
       "direction": "up",
       "spike_date": "2026-10-27",
-      "spike_chg_pct": 12.79,
-      "spike_vol_mult": 8.3,
+      "spike_chg_pct": 12.61,
+      "spike_vol_mult": 8.4,
       "spike_low": 2400.0,
       "spike_high": 2580.0,
-      "spike_close": 2522.0,
+      "spike_close": 2518.0,
       "last_date": "2026-10-27",
-      "close": 2522.0,
+      "close": 2518.0,
       "days_since_spike": 0,
       "confirmed": true,
       "level_held": true,
@@ -146,7 +146,7 @@
       "chikou_bullish": true,
       "basic_number_hit": null,
       "score": 9,
-      "avg_turnover_20d": 574224705.0
+      "avg_turnover_20d": 575360155.0
     },
     {
       "code": "8070",
@@ -170,7 +170,7 @@
       "chikou_bullish": true,
       "basic_number_hit": null,
       "score": 7,
-      "avg_turnover_20d": 146101715.0
+      "avg_turnover_20d": 146113155.0
     },
     {
       "code": "9072",
@@ -184,7 +184,7 @@
       "spike_high": 4528.0,
       "spike_close": 4200.0,
       "last_date": "2026-10-27",
-      "close": 4161.0,
+      "close": 4163.0,
       "days_since_spike": 3,
       "confirmed": true,
       "level_held": true,
@@ -194,7 +194,7 @@
       "chikou_bullish": false,
       "basic_number_hit": null,
       "score": 3,
-      "avg_turnover_20d": 1722822640.0
+      "avg_turnover_20d": 1723209380.0
     },
     {
       "code": "9449",
@@ -208,7 +208,7 @@
       "spike_high": 3507.0,
       "spike_close": 3179.0,
       "last_date": "2026-10-27",
-      "close": 3126.0,
+      "close": 3107.0,
       "days_since_spike": 1,
       "confirmed": false,
       "level_held": false,
@@ -218,7 +218,7 @@
       "chikou_bullish": false,
       "basic_number_hit": null,
       "score": -4,
-      "avg_turnover_20d": 2673137045.0
+      "avg_turnover_20d": 2680149670.0
     },
     {
       "code": "6323",
@@ -228,16 +228,16 @@
       "direction": "squeeze",
       "kind": "precursor",
       "spike_date": "2026-10-27",
-      "spike_chg_pct": 3.9,
-      "spike_vol_mult": 0.59,
+      "spike_chg_pct": 3.87,
+      "spike_vol_mult": 0.6,
       "limit_pct": 20.35,
       "last_date": "2026-10-27",
-      "close": 3574.0,
+      "close": 3573.0,
       "days_since_spike": 0,
       "prior_limitups_20d": 1,
       "atr14_pct": 9.18,
-      "ret_20d": -3.67,
-      "turnover20_oku": 180.58,
+      "ret_20d": -3.69,
+      "turnover20_oku": 180.62,
       "above_tenkan": false,
       "above_kijun": false,
       "cloud_position": "below",
@@ -247,14 +247,14 @@
       "quiet_volume": true,
       "price_score": 3,
       "score": 4,
-      "avg_turnover_20d": 18057818005.0,
+      "avg_turnover_20d": 18061826035.0,
       "sector_hits": 1,
       "margin_date": "2026-10-23",
       "margin_sell": 108200.0,
       "margin_buy": 3901400.0,
       "margin_ratio": 36.06,
       "margin_sell_chg4w": 23.1,
-      "margin_sell_pl": 21.06,
+      "margin_sell_pl": 21.08,
       "margin_score": 1
     }
   ]
