@@ -296,6 +296,29 @@ def evaluate(code: str, name: str, market: str, d: pd.DataFrame,
         "basic_number_hit": hidara_hit,
         "score": score,
         "avg_turnover_20d": float((d["Close"] * d["Volume"]).rolling(20).mean().iloc[-1]),
+        "chart": chart_series(d),
+    }
+
+
+def chart_series(d: pd.DataFrame, n: int = 60) -> dict:
+    """ページでミニチャートを描くための直近 n 本。値は丸めて JSON を小さくする。"""
+    ich = ichimoku(d)
+    fl = limits.limit_flags(d)
+    dd = d.iloc[-n:]
+    tk = ich["tenkan"].iloc[-n:]
+    kj = ich["kijun"].iloc[-n:]
+    lu = fl["limit_up"].fillna(False).iloc[-n:].to_numpy()
+    ld = fl["limit_down"].fillna(False).iloc[-n:].to_numpy()
+
+    def arr(x):
+        return [None if pd.isna(v) else round(float(v), 1) for v in x]
+
+    return {
+        "from": str(dd.index[0].date()), "to": str(dd.index[-1].date()),
+        "o": arr(dd["Open"]), "h": arr(dd["High"]), "l": arr(dd["Low"]), "c": arr(dd["Close"]),
+        "tk": arr(tk), "kj": arr(kj),
+        "lu": [int(i) for i in np.flatnonzero(lu)],
+        "ld": [int(i) for i in np.flatnonzero(ld)],
     }
 
 
@@ -388,6 +411,7 @@ def evaluate_squeeze(code: str, name: str, market: str, sector: str,
         "quiet_volume": bool(vol_ratio is not None and vol_ratio < SQ_QUIET_VOL),
         "price_score": score, "score": score,
         "avg_turnover_20d": turnover,
+        "chart": chart_series(d),
     }
 
 

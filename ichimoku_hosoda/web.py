@@ -130,6 +130,87 @@ def _load_watchlist() -> list:
     return wl
 
 
+def mini_chart(ch: dict, w: int = 300, h: int = 128) -> str:
+    """ローソク足のミニチャートを SVG で描く。転換線・基準線と、ストップ高▲／ストップ安▼を重ねる。"""
+    if not ch or not ch.get("c"):
+        return ""
+    o, hi, lo, c = ch["o"], ch["h"], ch["l"], ch["c"]
+    n = len(c)
+    vals = [v for v in (hi + lo + [x for x in (ch.get("tk") or []) if x is not None]
+                        + [x for x in (ch.get("kj") or []) if x is not None]) if v is not None]
+    if not vals:
+        return ""
+    vmax, vmin = max(vals), min(vals)
+    pad = (vmax - vmin) * 0.06 or 1.0
+    vmax, vmin = vmax + pad, vmin - pad
+    PL, PR, PT, PB = 2, 2, 8, 2
+    iw, ih = w - PL - PR, h - PT - PB
+    step = iw / max(n, 1)
+    bw = max(1.3, step * 0.62)
+
+    def X(i):
+        return round(PL + step * (i + 0.5), 2)
+
+    def Y(v):
+        return round(PT + ih * (vmax - v) / (vmax - vmin), 2)
+
+    parts = [f'<svg viewBox="0 0 {w} {h}" width="100%" preserveAspectRatio="none" '
+             f'xmlns="http://www.w3.org/2000/svg" class="mc" role="img">']
+
+    def line(key, cls):
+        pts = [f"{X(i)},{Y(v)}" for i, v in enumerate(ch.get(key) or []) if v is not None]
+        if len(pts) > 1:
+            parts.append(f'<polyline class="{cls}" points="{" ".join(pts)}"/>')
+
+    line("kj", "kj")
+    line("tk", "tk")
+    for i in range(n):
+        if None in (o[i], hi[i], lo[i], c[i]):
+            continue
+        up = c[i] >= o[i]
+        cls = "up" if up else "dn"
+        x = X(i)
+        parts.append(f'<line class="wk {cls}" x1="{x}" y1="{Y(hi[i])}" x2="{x}" y2="{Y(lo[i])}"/>')
+        y1, y2 = Y(max(o[i], c[i])), Y(min(o[i], c[i]))
+        parts.append(f'<rect class="bd {cls}" x="{round(x - bw / 2, 2)}" y="{y1}" '
+                     f'width="{round(bw, 2)}" height="{max(round(y2 - y1, 2), 1.0)}"/>')
+    for i in ch.get("lu") or []:
+        if i < n and hi[i] is not None:
+            parts.append(f'<polygon class="mu" points="{X(i)},{Y(hi[i]) - 6.5} '
+                         f'{X(i) - 3.2},{Y(hi[i]) - 1.5} {X(i) + 3.2},{Y(hi[i]) - 1.5}"/>')
+    for i in ch.get("ld") or []:
+        if i < n and lo[i] is not None:
+            parts.append(f'<polygon class="md" points="{X(i)},{Y(lo[i]) + 6.5} '
+                         f'{X(i) - 3.2},{Y(lo[i]) + 1.5} {X(i) + 3.2},{Y(lo[i]) + 1.5}"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def chart_grid(rows: list, limit: int = 24) -> str:
+    """候補のチャートを並べる。クリックで節目判定ページへ。"""
+    import html as _h
+    cards = []
+    for x in rows[:limit]:
+        svg = mini_chart(x.get("chart"))
+        if not svg:
+            continue
+        name = _h.escape(str(x.get("name", "")))
+        code = _h.escape(str(x.get("code", "")))
+        sub = []
+        if x.get("kind"):
+            sub.append("継続" if x["kind"] == "continuation" else "前兆")
+        if x.get("spike_date"):
+            sub.append(str(x["spike_date"]))
+        sub.append(f"スコア{x.get('score', '')}")
+        cards.append(
+            f'<a class="card" href="/?code={code}" title="{name} の節目判定を開く">'
+            f'<div class="ct"><b>{code}</b> {name}</div>'
+            f'{svg}<div class="cs">{" / ".join(_h.escape(s) for s in sub)}</div></a>')
+    if not cards:
+        return ""
+    return f'<div class="grid">{"".join(cards)}</div>'
+
+
 @app.get("/screener", response_class=HTMLResponse)
 def screener():
     """大出来高 × 一目 監視リスト。screener/watchlist.json（毎営業日 17:30 JST 更新）を表示。"""
@@ -158,7 +239,8 @@ def screener():
             return '<p class="none">該当なし</p>'
         d = direction == "down"
         cells = "".join(
-            f"<tr><td class=\"code\">{_html.escape(str(x['code']))}</td>"
+            f"<tr><td class=\"code\"><a href=\"/?code={_html.escape(str(x['code']))}\">"
+            f"{_html.escape(str(x['code']))}</a></td>"
             f"<td>{_html.escape(str(x['name']))}</td>"
             f"<td>{_html.escape(str(x['spike_date']))}</td>"
             f"<td class=\"num {'dn' if x['spike_chg_pct'] < 0 else 'upc'}\">{x['spike_chg_pct']:+.2f}%</td>"
@@ -191,7 +273,8 @@ def screener():
                     .replace("スタンダード（内国株式）", "スタンダード")
                     .replace("グロース（内国株式）", "グロース"))
         cells = "".join(
-            f"<tr><td class=\"code\">{_html.escape(str(x['code']))}</td>"
+            f"<tr><td class=\"code\"><a href=\"/?code={_html.escape(str(x['code']))}\">"
+            f"{_html.escape(str(x['code']))}</a></td>"
             f"<td>{_html.escape(str(x['name']))}</td>"
             f"<td class=\"sm\">{_html.escape(mk(x.get('market', ''))[:8])}</td>"
             f"<td class=\"sm\">{KIND.get(x.get('kind'), '')}</td>"
@@ -256,6 +339,25 @@ tbody tr:last-child td {{ border-bottom:none; }}
 .upc {{ color:var(--up); }} .dn {{ color:var(--dn); }}
 .o {{ color:var(--accent); font-weight:700; }} .x {{ color:var(--muted); }}
 .none {{ color:var(--muted); font-size:.9rem; padding:12px 0; }}
+.grid {{ display:grid; gap:12px; margin-top:14px;
+  grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); }}
+.card {{ display:block; border:1px solid var(--line); border-radius:8px; background:var(--card);
+  padding:8px 8px 6px; text-decoration:none; color:inherit; }}
+.card:hover {{ border-color:var(--accent); }}
+.ct {{ font-size:.78rem; margin-bottom:2px; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }}
+.ct b {{ color:var(--accent); font-variant-numeric:tabular-nums; }}
+.cs {{ font-size:.7rem; color:var(--muted); margin-top:2px; }}
+.mc {{ display:block; height:112px; }}
+.mc .wk {{ stroke-width:1; }}
+.mc .bd {{ stroke-width:.6; }}
+.mc .up {{ stroke:var(--up); fill:var(--up); }}
+.mc .dn {{ stroke:var(--dn); fill:var(--dn); }}
+.mc .tk {{ fill:none; stroke:var(--accent); stroke-width:1.2; }}
+.mc .kj {{ fill:none; stroke:var(--muted); stroke-width:1.2; stroke-dasharray:3 2; }}
+.mc .mu {{ fill:var(--up); }}
+.mc .md {{ fill:var(--dn); }}
+.code a {{ color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }}
 .note {{ margin-top:36px; padding-top:16px; border-top:1px solid var(--line);
   color:var(--muted); font-size:.8rem; }}
 .note li {{ margin:4px 0; }}
@@ -267,17 +369,21 @@ a {{ color:var(--accent); }}
 
 <h2>ストップ高・踏み上げ候補<span class="n">{len(sq)} 件</span></h2>
 {sq_table(sq)}
+{chart_grid(sq)}
 
 <h2>下落（底打ち候補）<span class="n">{len(down)} 件</span></h2>
 {table(down, "down")}
+{chart_grid(down, 12)}
 
 <h2>上昇（ブレイク候補）<span class="n">{len(up)} 件</span></h2>
 {table(up, "up")}
+{chart_grid(up, 12)}
 
 <div class="note"><ul>
 <li><b>ストップ高候補</b>の配点: 直近20日にストップ高の履歴 +3 / ATR14が7%以上 +2 / ストップ高当日の出来高が20日平均の2倍未満 +2 / 三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 &minus;2 / プライム &minus;1 / 雲上+1・雲下&minus;1 / 基本数値一致 +1。需給は 売残が4週で+20%以上 +2 / 同&minus;20%以下 &minus;2 / 貸借倍率1〜3 +1。同業種で2件以上ヒットすると +1（業種名に★）</li>
 <li>この配点は過去1年・ストップ高763件の<b>翌日継続率</b>から決めています。全体16.5%に対し、履歴あり24.0% / ATR7%以上21.8% / 当日出来高2倍未満23.9% / 履歴&times;三役好転&times;ATR 30.6%。<b>最良の組み合わせでも3割程度</b>なので、スコアは確度ではなく条件の重なり具合として見てください</li>
 <li>需給の配点も過去のストップ高177件の信用残の実測から決めています。基準15.4%に対し、<b>売残が4週で+20%以上は20.7%、&minus;20%以下は8.9%</b>、貸借倍率1〜3は19.8%。一方<b>「売残&gt;買残」は6.6%、「売り方が含み損」は14.4%で効きませんでした</b>（含み損は既に上昇した銘柄なら当然そうなるため、20日騰落とほぼ同じことを測っていた）。この2つは配点せず表示のみです</li>
+<li>チャートは直近60営業日。実線が転換線、破線が基準線、▲がストップ高、▼がストップ安。コードまたはチャートをクリックすると節目判定が開きます</li>
 <li>「継続」は直近3営業日にストップ高があった銘柄、「前兆」はストップ高履歴とATRの条件が揃っているがまだストップ高していない銘柄</li>
 <li>抽出条件（下落・上昇）: 出来高が20日平均の3倍以上 &times; 下落側は7%超の下落または大陰線かつ20日高値から15%以上下落／上昇側は7%超の上昇または大陽線かつ20日高値を更新</li>
 <li>スコア: 確認+2 / 安値維持+2（割れ-3） / 転換線上+2 / 基準線上+1 / 遅行好転+1 / 基本数値一致+1 / 雲上+1・雲下-1</li>

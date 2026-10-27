@@ -628,7 +628,14 @@ function mdToHtml(src){
 document.documentElement.lang=LANG; $('#lang').value=LANG; $('#guidelink').href='/guide?lang='+LANG;
 $('#lang').onchange=e=>{try{localStorage.setItem('lang',e.target.value)}catch(_){} location.reload()};
 trDom(document.body);
-try{const c=sessionStorage.getItem('lastcode'), m=sessionStorage.getItem('lastmarket'); if(m) $('#market').value=m; if(c){$('#code').value=c; run()}}catch(e){}
+// URL の ?code= が最優先（スクリーナーからのリンク）。無ければ前回のコードを復元
+try{
+  const q=new URLSearchParams(location.search).get('code');
+  const c=sessionStorage.getItem('lastcode'), m=sessionStorage.getItem('lastmarket');
+  if(m) $('#market').value=m;
+  if(q){$('#code').value=q; run()}
+  else if(c){$('#code').value=c; run()}
+}catch(e){}
 </script>
 </body>
 </html>
