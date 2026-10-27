@@ -9,7 +9,7 @@ on:
         description: 取得期間（yfinance の period）
         default: "1y"
       only:
-        description: "margin / limitup / both"
+        description: "margin / limitup / whipsaw / both"
         default: "both"
 
 permissions:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   margin:
-    if: inputs.only != 'limitup'
+    if: inputs.only == 'margin' || inputs.only == 'both'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,8 +46,46 @@ jobs:
           done
           exit 1
 
+  whipsaw:
+    if: inputs.only == 'whipsaw' || inputs.only == 'both'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        market: [プライム, スタンダード, グロース]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "yfinance==1.7.0" curl_cffi pandas numpy requests openpyxl xlrd lxml
+      - name: whipsaw study
+        env:
+          SCREENER_MARKETS: ${{ matrix.market }}
+          RESEARCH_PERIOD: ${{ inputs.period }}
+        run: |
+          set -o pipefail
+          python -u screener/research_whipsaw.py
+      - name: commit result
+        run: |
+          git config user.name "screener-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -f screener/research
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -m "research(${{ matrix.market }}): whipsaw"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
   research:
-    if: inputs.only != 'margin'
+    if: inputs.only == 'limitup' || inputs.only == 'both'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
