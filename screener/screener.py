@@ -573,7 +573,7 @@ def screen() -> tuple[list[dict], str]:
         latest: dict[str, dict] = {}
         for x in sq:
             cur = latest.get(x["code"])
-            if cur is None or x["spike_date"] > cur["spike_date"]:
+            if cur is None or _sq_rank(x) > _sq_rank(cur):
                 latest[x["code"]] = x
         sq = list(latest.values())
 
@@ -599,6 +599,14 @@ def _normalize(x: dict) -> dict:
     return x
 
 
+SQ_KIND_PRIORITY = {"continuation": 3, "whipsaw": 2, "precursor": 1}
+
+
+def _sq_rank(x: dict) -> tuple:
+    """同じ銘柄の squeeze 候補のうちどれを残すか。評価が新しい順 → 継続 > 往復 > 前兆 → 起点が新しい順。"""
+    return (x.get("last_date", ""), SQ_KIND_PRIORITY.get(x.get("kind"), 0), x.get("spike_date", ""))
+
+
 def merge_watchlist(new: list[dict], today: str) -> list[dict]:
     old = json.loads(OUT_JSON.read_text(encoding="utf-8")) if OUT_JSON.exists() else []
     key = lambda x: (x["code"], x["spike_date"], x["direction"])
@@ -614,15 +622,18 @@ def merge_watchlist(new: list[dict], today: str) -> list[dict]:
             limit = EXPIRE_DAYS * 1.5
         if age <= limit:  # 暦日換算。squeeze は短命なので短く
             kept.append(x)
-    # squeeze は銘柄ごとに最新の起点だけ残す（前日までの記録が残って重複するのを防ぐ）
-    newest: dict[str, str] = {}
+    # squeeze は銘柄ごとに1件だけ残す。往復の起点はストップ安の日（過去日）になるため、
+    # 起点日で選ぶと前日までの「前兆」レコードに負ける。評価日 → 種別の優先度で選ぶ。
+    best: dict[str, dict] = {}
+    others: list[dict] = []
     for x in kept:
         if x["direction"] != "squeeze":
+            others.append(x)
             continue
-        if x["spike_date"] > newest.get(x["code"], ""):
-            newest[x["code"]] = x["spike_date"]
-    kept = [x for x in kept
-            if x["direction"] != "squeeze" or x["spike_date"] == newest[x["code"]]]
+        cur = best.get(x["code"])
+        if cur is None or _sq_rank(x) > _sq_rank(cur):
+            best[x["code"]] = x
+    kept = others + list(best.values())
 
     kept.sort(key=lambda x: (-x["score"], x["days_since_spike"]))
     return kept
