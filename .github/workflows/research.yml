@@ -1,4 +1,5 @@
 # 単発の調査用。手動実行のみ。市場ごとに別ジョブ（別ランナー＝別IP）で並列に取得する。
+# 各ジョブが自分の結果を直接コミットする（リベース再試行で衝突を解消）。
 name: research-limitup
 
 on:
@@ -29,35 +30,19 @@ jobs:
         env:
           SCREENER_MARKETS: ${{ matrix.market }}
           RESEARCH_PERIOD: ${{ inputs.period }}
-        run: python -u screener/research_limitup.py 2>&1 | tee "screener/research-${{ matrix.market }}.log"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: research-${{ matrix.market }}
-          path: |
-            screener/research/
-            screener/research-*.log
-
-  collect:
-    needs: research
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: /tmp/art
-      - name: commit results
+        run: python -u screener/research_limitup.py
+      - name: commit result
         run: |
-          mkdir -p screener/research
-          find /tmp/art -name '*.json' -exec cp {} screener/research/ \;
-          find /tmp/art -name 'research-*.log' -exec cp {} screener/ \;
           git config user.name "screener-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add screener/research screener/research-*.log
+          git add screener/research
           if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
-          git commit -m "research: limit-up features"
-          for i in 1 2 3; do
-            git pull --rebase --autostash origin main && git push origin HEAD:main && exit 0
-            sleep 10
+          git commit -m "research(${{ matrix.market }}): limit-up features"
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push に失敗。15秒待って再試行 ($i/5)"
+            sleep 15
           done
           exit 1
