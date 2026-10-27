@@ -265,7 +265,7 @@ def screener():
     def sq_table(rows):
         if not rows:
             return '<p class="none">該当なし</p>'
-        KIND = {"continuation": "継続", "precursor": "前兆"}
+        KIND = {"continuation": "継続", "whipsaw": "往復", "precursor": "前兆"}
         def pct(v, suf="%"):
             return f"{v}{suf}" if v is not None else "\u2014"
         def mk(v):
@@ -283,6 +283,8 @@ def screener():
             f"<td class=\"num\">\u00d7{x.get('spike_vol_mult') if x.get('spike_vol_mult') is not None else '\u2014'}</td>"
             f"<td class=\"num\">{pct(x.get('atr14_pct'))}</td>"
             f"<td class=\"num {'upc' if (x.get('ret_20d') or 0) > 0 else 'dn'}\">{pct(x.get('ret_20d'))}</td>"
+            f"<td class=\"num {'upc' if (x.get('pullback_pct') or 0) > 0 else 'dn'}\">{pct(x.get('pullback_pct'))}</td>"
+            f"<td class=\"num\">{x.get('lu_count_20d') if x.get('lu_count_20d') is not None else '\u2014'}</td>"
             f"<td class=\"num\">{pct(x.get('turnover20_oku'), '億')}</td>"
             f"<td class=\"num\">{x.get('prior_limitups_20d', 0)}</td>"
             f"<td>{mark(x.get('sanyaku'))}</td>"
@@ -296,7 +298,9 @@ def screener():
         return (
             "<div class=\"wrap\"><table><thead><tr>"
             "<th>コード</th><th>銘柄</th><th>市場</th><th>種別</th><th>起点日</th>"
-            "<th>制限値幅</th><th>当日出来高</th><th>ATR</th><th>20日騰落</th><th>代金</th>"
+            "<th>制限値幅</th><th>当日出来高</th><th>ATR</th><th>20日騰落</th>"
+            "<th title=\"ストップ高が始まる前の終値に対する現在値。プラスなら押しが浅い\">押し</th>"
+            "<th title=\"直近20日のストップ高回数\">反復</th><th>代金</th>"
             "<th>履歴</th><th>三役</th><th>貸借倍率</th><th>売残4週</th><th>売り方損益</th>"
             "<th>業種</th><th>スコア</th>"
             f"</tr></thead><tbody>{cells}</tbody></table></div>")
@@ -380,7 +384,8 @@ a {{ color:var(--accent); }}
 {chart_grid(up, 12)}
 
 <div class="note"><ul>
-<li><b>ストップ高候補</b>の配点: 直近20日にストップ高の履歴 +3 / ATR14が7%以上 +2 / ストップ高当日の出来高が20日平均の2倍未満 +2 / 三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 &minus;2 / プライム &minus;1 / 雲上+1・雲下&minus;1 / 基本数値一致 +1。需給は 売残が4週で+20%以上 +2 / 同&minus;20%以下 &minus;2 / 貸借倍率1〜3 +1。同業種で2件以上ヒットすると +1（業種名に★）</li>
+<li><b>往復（ストップ高→ストップ安→再ストップ高）</b>の配点: 反復3回以上 +2 / 押しが浅い（ストップ高前の水準を維持）+2 / 売買代金20億円以下 +1 / 同50億円超 &minus;2 / プライム &minus;1。過去2年・往復378件の実測で、ストップ安から10日以内の再ストップ高は<b>34.4%</b>。ただし<b>ストップ安を挟まない場合も31.1%</b>なので、ストップ安自体の寄与は小さく、効くのは反復回数（3回以上37.0% / 2回23.5% / 1回以下21.1%）と押しの浅さ（維持37.3% / 下回り28.5%）でした。ストップ安までの日数とATRは効きませんでした。再ストップ高までは1〜7営業日が大半（3〜4日が最多）。このパターンでは一目の各項目を別途検証していないため、表示のみで配点していません</li>
+<li><b>継続・前兆</b>の配点: 直近20日にストップ高の履歴 +3 / ATR14が7%以上 +2 / ストップ高当日の出来高が20日平均の2倍未満 +2 / 三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 &minus;2 / プライム &minus;1 / 雲上+1・雲下&minus;1 / 基本数値一致 +1。需給は 売残が4週で+20%以上 +2 / 同&minus;20%以下 &minus;2 / 貸借倍率1〜3 +1。同業種で2件以上ヒットすると +1（業種名に★）</li>
 <li>この配点は過去1年・ストップ高763件の<b>翌日継続率</b>から決めています。全体16.5%に対し、履歴あり24.0% / ATR7%以上21.8% / 当日出来高2倍未満23.9% / 履歴&times;三役好転&times;ATR 30.6%。<b>最良の組み合わせでも3割程度</b>なので、スコアは確度ではなく条件の重なり具合として見てください</li>
 <li>需給の配点も過去のストップ高177件の信用残の実測から決めています。基準15.4%に対し、<b>売残が4週で+20%以上は20.7%、&minus;20%以下は8.9%</b>、貸借倍率1〜3は19.8%。一方<b>「売残&gt;買残」は6.6%、「売り方が含み損」は14.4%で効きませんでした</b>（含み損は既に上昇した銘柄なら当然そうなるため、20日騰落とほぼ同じことを測っていた）。この2つは配点せず表示のみです</li>
 <li>チャートは直近60営業日。実線が転換線、破線が基準線、▲がストップ高、▼がストップ安。コードまたはチャートをクリックすると節目判定が開きます</li>

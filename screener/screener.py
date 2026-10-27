@@ -56,6 +56,14 @@ SQ_LOOKBACK = 3             # 何営業日前までのストップ高を拾う�
 SQ_EXPIRE_DAYS = 7          # squeeze は短命なので暦日7日で落とす
 SQ_MARGIN_TOP = int(os.environ.get("SQ_MARGIN_TOP", "20"))  # 需給（信用残）を取る上位件数（シャードごと）
 
+# 往復（ストップ高→ストップ安→再ストップ高）。research_whipsaw.py の実測（過去2年・往復378件）より。
+# 10日以内の再ストップ高は 34.4%（ストップ安を挟まない場合も31.1%なので、ストップ安自体の寄与は小さい）。
+# 群内で効くのは反復回数（3回以上37.0% / 2回23.5% / 1回以下21.1%）と
+# 押しの浅さ（維持37.3% / 下回り28.5%）、代金（20億以下35.5% / 50億超26.5%）。
+WHIP_UP_TO_DOWN = 10        # ストップ高からストップ安までの許容営業日数
+WHIP_RECENT = 7             # ストップ安が何営業日前までなら候補にするか
+WHIP_EXPIRE_DAYS = 12       # 再ストップ高は1〜7営業日に集中するため暦日12日で落とす
+
 # 対象市場。環境変数 SCREENER_MARKETS でシャードごとに切り替える（カンマ区切り）。
 # Yahoo の時間あたりリクエスト上限に当たるため、1ジョブ1市場に分けて並列実行する。
 MARKETS = tuple(x for x in os.environ.get("SCREENER_MARKETS", "プライム").split(",") if x)
@@ -331,19 +339,31 @@ def _atr_pct(d: pd.DataFrame, i: int, n: int = 14) -> float | None:
 
 
 def find_squeeze(d: pd.DataFrame) -> list[tuple[pd.Timestamp, str]]:
-    """ストップ高の継続候補と、その前兆候補を (日付, 種別) で返す。
+    """ストップ高まわりの候補を (起点日, 種別) で返す。優先度は継続 > 往復 > 前兆。
 
     continuation: 直近 SQ_LOOKBACK 営業日にストップ高があった（翌日の継続を狙う）
+    whipsaw:      ストップ高のあとストップ安になり、まだ再ストップ高していない
     precursor:    まだストップ高していないが、履歴と ATR が揃っている
     """
     flags = limits.limit_flags(d)
     lu = flags["limit_up"].fillna(False)
+    ld = flags["limit_down"].fillna(False)
+    i = len(d) - 1
+
     recent = d.index[-SQ_LOOKBACK:]
     hits = [(t, "continuation") for t in lu[lu].index if t in recent]
     if hits:
         return hits
 
-    i = len(d) - 1
+    # 往復: 直近 WHIP_RECENT 日のストップ安で、その前 WHIP_UP_TO_DOWN 日以内にストップ高があり、
+    # ストップ安以降はまだストップ高していないもの
+    lua, lda = lu.to_numpy(), ld.to_numpy()
+    jd = next((k for k in range(i, max(-1, i - WHIP_RECENT), -1) if lda[k]), None)
+    if jd is not None and not lua[jd + 1:].any():
+        iu = next((k for k in range(jd - 1, max(-1, jd - WHIP_UP_TO_DOWN - 1), -1) if lua[k]), None)
+        if iu is not None:
+            return [(d.index[jd], "whipsaw")]
+
     prior = int(lu.iloc[max(0, i - SQ_PRIOR_DAYS):i].sum())
     atr = _atr_pct(d, i)
     if prior >= 1 and atr is not None and atr >= SQ_ATR_PCT:
@@ -378,18 +398,40 @@ def evaluate_squeeze(code: str, name: str, market: str, sector: str,
     sanyaku = bool(above_tenkan and above_kijun and cloud_pos == "above" and chikou_up)
     hidara_hit = next((n for n in BASIC_NUMBERS if abs(days_since - n) <= 1), None)
 
-    # 値動きスコア（過去1年の継続率の差をもとに配点）
-    score = 0
-    score += 3 if prior_lu >= 1 else 0                      # 24.0% vs 12.1%
-    score += 2 if (atr or 0) >= SQ_ATR_PCT else 0           # 21.8% vs 10.8%（4%未満）
-    score += 2 if (vol_ratio is not None and vol_ratio < SQ_QUIET_VOL) else 0   # 23.9%
-    score += 2 if sanyaku else 0                            # 18.2% vs 15.4%、重ねると効く
-    score += 1 if (ret20 or 0) >= SQ_RET20 else 0           # 19.0%
-    score += 1 if turnover <= SQ_TURNOVER_SMALL else 0      # 17.7%
-    score -= 2 if turnover > SQ_TURNOVER_MAX else 0         # 10.2%
-    score -= 1 if "プライム" in str(market) else 0            # 9.5% vs 20.7%/17.0%
-    score += {"above": 1, "in": 0, "below": -1}[cloud_pos]
-    score += 1 if hidara_hit else 0
+    # 往復（whipsaw）用の指標: 起点のストップ安より前の最後のストップ高と、そこからの押し具合
+    lu_count_20d = int(lu.iloc[max(0, i_spike - SQ_PRIOR_DAYS):i_spike + 1].sum())
+    pullback = None
+    up_date = None
+    if kind == "whipsaw":
+        lua = lu.to_numpy()
+        iu = next((k for k in range(i_spike - 1, max(-1, i_spike - WHIP_UP_TO_DOWN - 1), -1) if lua[k]), None)
+        if iu is not None and iu >= 1:
+            up_date = d.index[iu].strftime("%Y-%m-%d")
+            # ストップ高が始まる前の終値に対する現在値。プラスなら押しが浅い
+            pullback = round(c_last / float(d["Close"].iloc[iu - 1]) * 100 - 100, 2)
+
+    if kind == "whipsaw":
+        # research_whipsaw.py の実測のみで配点（基準34.4%）。一目の各項目はこのパターンでは
+        # 別途検証していないため表示だけにして点を与えない。
+        score = 0
+        score += 2 if lu_count_20d >= 3 else 0              # 37.0% vs 23.5%（2回）/21.1%（1回以下）
+        score += 2 if (pullback is not None and pullback > 0) else 0   # 37.3% vs 28.5%
+        score += 1 if turnover <= SQ_TURNOVER_SMALL else 0  # 35.5%
+        score -= 2 if turnover > SQ_TURNOVER_MAX else 0     # 26.5%
+        score -= 1 if "プライム" in str(market) else 0        # 5/15 件
+    else:
+        # 値動きスコア（過去1年・翌日継続率の差をもとに配点）
+        score = 0
+        score += 3 if prior_lu >= 1 else 0                      # 24.0% vs 12.1%
+        score += 2 if (atr or 0) >= SQ_ATR_PCT else 0           # 21.8% vs 10.8%（4%未満）
+        score += 2 if (vol_ratio is not None and vol_ratio < SQ_QUIET_VOL) else 0   # 23.9%
+        score += 2 if sanyaku else 0                            # 18.2% vs 15.4%、重ねると効く
+        score += 1 if (ret20 or 0) >= SQ_RET20 else 0           # 19.0%
+        score += 1 if turnover <= SQ_TURNOVER_SMALL else 0      # 17.7%
+        score -= 2 if turnover > SQ_TURNOVER_MAX else 0         # 10.2%
+        score -= 1 if "プライム" in str(market) else 0            # 9.5% vs 20.7%/17.0%
+        score += {"above": 1, "in": 0, "below": -1}[cloud_pos]
+        score += 1 if hidara_hit else 0
 
     return {
         "code": code, "name": name, "market": market, "sector": sector or "",
@@ -402,6 +444,9 @@ def evaluate_squeeze(code: str, name: str, market: str, sector: str,
         "close": c_last,
         "days_since_spike": days_since,
         "prior_limitups_20d": prior_lu,
+        "lu_count_20d": lu_count_20d,
+        "pullback_pct": pullback,
+        "up_date": up_date,
         "atr14_pct": atr,
         "ret_20d": ret20,
         "turnover20_oku": round(turnover / 1e8, 2),
@@ -563,7 +608,10 @@ def merge_watchlist(new: list[dict], today: str) -> list[dict]:
     kept = []
     for x in by_key.values():
         age = (pd.Timestamp(today) - pd.Timestamp(x["spike_date"])).days
-        limit = SQ_EXPIRE_DAYS if x["direction"] == "squeeze" else EXPIRE_DAYS * 1.5
+        if x["direction"] == "squeeze":
+            limit = WHIP_EXPIRE_DAYS if x.get("kind") == "whipsaw" else SQ_EXPIRE_DAYS
+        else:
+            limit = EXPIRE_DAYS * 1.5
         if age <= limit:  # 暦日換算。squeeze は短命なので短く
             kept.append(x)
     # squeeze は銘柄ごとに最新の起点だけ残す（前日までの記録が残って重複するのを防ぐ）
@@ -606,10 +654,10 @@ def _table(rows: list[dict], direction: str) -> list[str]:
 def _squeeze_table(rows: list[dict]) -> list[str]:
     if not rows:
         return ["該当なし"]
-    out = ["| コード | 銘柄 | 市場 | 種別 | 起点日 | 制限値幅 | 当日出来高 | ATR | 20日騰落 | 代金 | 履歴 | 三役 | 貸借倍率 | 売残4週 | 売り方損益 | 業種 | スコア |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| コード | 銘柄 | 市場 | 種別 | 起点日 | 制限値幅 | 当日出来高 | ATR | 20日騰落 | 押し | 反復 | 代金 | 履歴 | 三役 | 貸借倍率 | 売残4週 | 売り方損益 | 業種 | スコア |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     ok = lambda b: "○" if b else "－"
-    kind = {"continuation": "継続", "precursor": "前兆"}
+    kind = {"continuation": "継続", "whipsaw": "往復", "precursor": "前兆"}
     for x in rows:
         mk = str(x.get("market", "")).replace("プライム（内国株式）", "プライム") \
             .replace("スタンダード（内国株式）", "スタンダード").replace("グロース（内国株式）", "グロース")
@@ -617,7 +665,9 @@ def _squeeze_table(rows: list[dict]) -> list[str]:
             f"| {x['code']} | {x['name']} | {mk[:6]} | {kind.get(x.get('kind'), '')} "
             f"| {x['spike_date']} | {x.get('limit_pct', '－')}% "
             f"| ×{x.get('spike_vol_mult') or '－'} | {x.get('atr14_pct') or '－'}% "
-            f"| {x.get('ret_20d') or '－'}% | {x.get('turnover20_oku') or '－'}億 "
+            f"| {x.get('ret_20d') or '－'}% "
+            f"| {str(x.get('pullback_pct')) + '%' if x.get('pullback_pct') is not None else '－'} "
+            f"| {x.get('lu_count_20d', '－')}回 | {x.get('turnover20_oku') or '－'}億 "
             f"| {x.get('prior_limitups_20d', 0)}回 | {ok(x.get('sanyaku'))} "
             f"| {x.get('margin_ratio') if x.get('margin_ratio') is not None else '－'} "
             f"| {str(x.get('margin_sell_chg4w')) + '%' if x.get('margin_sell_chg4w') is not None else '－'} "
@@ -640,7 +690,11 @@ def to_markdown(wl: list[dict], today: str) -> str:
     lines += _table(up, "up")
     lines += ["",
               "### ストップ高候補のスコア",
-              "履歴（直近20日にストップ高）+3 / ATR14が7%以上 +2 / 当日出来高が20日平均の2倍未満 +2 / "
+              "【往復】反復3回以上 +2 / 押しが浅い（ストップ高前の水準を維持）+2 / 売買代金20億円以下 +1 / "
+              "同50億円超 -2 / プライム -1。過去2年・往復378件の実測（10日以内の再ストップ高は基準34.4%、"
+              "反復3回以上37.0%・2回23.5%、押しが浅い37.3%・下回り28.5%）。"
+              "ストップ安を挟まない場合も31.1%なので、ストップ安自体の寄与は小さい。",
+              "【継続・前兆】履歴（直近20日にストップ高）+3 / ATR14が7%以上 +2 / 当日出来高が20日平均の2倍未満 +2 / "
               "三役好転 +2 / 20日騰落+15%以上 +1 / 売買代金20億円以下 +1 / 同50億円超 -2 / プライム -1 / "
               "雲上+1・雲下-1 / 基本数値一致 +1",
               "需給: 売残が4週で+20%以上 +2 / 同-20%以下 -2 / 貸借倍率1〜3 +1"
