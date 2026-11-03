@@ -105,6 +105,7 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
 <div id="layers" style="display:none;padding:6px 18px 0;font-size:12px;color:var(--mute)">
   <button id="lytoggle" type="button">表示設定 ▾</button><span id="lyopts">
   表示: <label><input type="checkbox" id="ly_sr" checked> 水平線</label>
+  <label><input type="checkbox" id="ly_vp" checked> 価格帯別出来高</label>
   <label><input type="checkbox" id="ly_level" checked> 相場水準</label>
   <label><input type="checkbox" id="ly_calc" checked> 計算値</label>
   <label><input type="checkbox" id="ly_cd" checked> 変化日</label>
@@ -179,14 +180,36 @@ function render(){
   ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
 let SEL_LEVEL=null;
-['ly_sr','ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA)drawChart(DATA.frames[FRAME])}));
+['ly_sr','ly_vp','ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA){drawChart(DATA.frames[FRAME]); if(id==='bars'){drawSide(DATA.frames[FRAME]); trDom($('#side'))}}}));
 const LY=id=>$('#'+id).checked;
 $('#lytoggle').onclick=()=>{const L=$('#layers'); L.classList.toggle('open'); $('#lytoggle').textContent=tr(L.classList.contains('open')?'表示設定 ▴':'表示設定 ▾')};
 
+// ---- 価格帯別出来高（ボリュームゾーン）：表示中の足の出来高を、各足の高値〜安値の範囲に均等に割り振って値段の帯ごとに合計
+function vpOf(F){
+  const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
+  if(!O.volume) return null;
+  const hi=O.high.slice(from), lo=O.low.slice(from), cl=O.close.slice(from), vol=O.volume.slice(from);
+  if(!vol.some(v=>v>0)) return null;
+  const top=Math.max(...hi), bot=Math.min(...lo), NB=NARROW()?30:40, step=(top-bot)/NB||1, v=new Array(NB).fill(0);
+  for(let i=0;i<hi.length;i++){const V=+vol[i]||0; if(!V) continue;
+    const a=Math.max(0,Math.min(NB-1,Math.floor((lo[i]-bot)/step))), b=Math.max(0,Math.min(NB-1,Math.floor((hi[i]-bot)/step)));
+    if(a===b){v[a]+=V; continue}
+    const rg=hi[i]-lo[i]||step;
+    for(let k=a;k<=b;k++){const x0=Math.max(lo[i],bot+k*step), x1=Math.min(hi[i],bot+(k+1)*step); v[k]+=V*Math.max(0,x1-x0)/rg}}
+  const total=v.reduce((s,x)=>s+x,0)||1, poc=v.indexOf(Math.max(...v));
+  // バリューエリア（出来高の 70% が集まる帯）：最多の帯から上下の多い方へ広げる
+  let a=poc, b=poc, acc=v[poc];
+  while(acc<total*0.7&&(a>0||b<NB-1)){const up=b<NB-1?v[b+1]:-1, dn=a>0?v[a-1]:-1; if(up>=dn){b++;acc+=v[b]}else{a--;acc+=v[a]}}
+  const bins=v.map((x,k)=>({lo:bot+k*step, hi:bot+(k+1)*step, mid:bot+(k+.5)*step, v:x, pct:x/total*100}));
+  // 出来高が周りより厚い帯（山）を上位から
+  const peaks=bins.map((z,k)=>({k,...z})).filter(z=>z.v>=(bins[z.k-1]?bins[z.k-1].v:0)&&z.v>=(bins[z.k+1]?bins[z.k+1].v:0)&&z.pct>=100/NB).sort((x,y)=>y.v-x.v).slice(0,4);
+  return {bins, step, poc, va:[bins[a].lo, bins[b].hi], peaks, close:cl[cl.length-1], bars:hi.length};
+}
 function drawChart(F){
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
   const o={date:O.date.slice(from),open:O.open.slice(from),high:O.high.slice(from),low:O.low.slice(from),close:O.close.slice(from),volume:O.volume?O.volume.slice(from):null};
   const VOL=LY('ly_vol')&&o.volume&&o.volume.some(v=>v>0);
+  const VP=LY('ly_vp')?vpOf(F):null, rpV=v=>F.inverted?2*F.inverted.ref-v:v;
   // 信用残（週次）を日足・週足の時間軸に合わせる：各週の値を、その日以前で最も近い足に置く
   const MGR=(DATA.margin&&DATA.margin.rows)||[], isD=/^(daily|weekly)/.test(FRAME);
   const mg=(LY('ly_mg')&&isD&&MGR.length)?(()=>{const pts=[]; MGR.forEach(r=>{ if(!/^\d{4}-/.test(r.date)) return;
@@ -206,6 +229,10 @@ function drawChart(F){
   const allDates=o.date.concat(fut.filter(d=>want.has(d)));
   const traces=[
     {x:allDates,y:allDates.map(()=>null),type:'scatter',mode:'markers',marker:{opacity:0},showlegend:false,hoverinfo:'skip'},
+    ...(VP?[{type:'bar',orientation:'h',xaxis:'x2',yaxis:'y',y:VP.bins.map(z=>z.mid),x:VP.bins.map(z=>z.v),width:VP.step*0.92,name:'価格帯別出来高',showlegend:false,
+      marker:{color:VP.bins.map((z,k)=>k===VP.poc?'rgba(90,90,90,.55)':(z.mid>=VP.va[0]&&z.mid<=VP.va[1])?'rgba(130,130,130,.38)':'rgba(160,160,160,.22)')},
+      customdata:VP.bins.map(z=>[fmt(rpV(z.lo)),fmt(rpV(z.hi)),z.pct.toFixed(1)]),
+      hovertemplate:'価格帯 %{customdata[0]}〜%{customdata[1]}<br>出来高 %{x:,.0f}（%{customdata[2]}%）<extra></extra>'}]:[]),
     {type:'candlestick',x:o.date,open:o.open,high:o.high,low:o.low,close:o.close,name:'実線',
      increasing:{line:{color:'#c0392b',width:1}},decreasing:{line:{color:'#1f5f8b',width:1}},whiskerwidth:.3,hoverinfo:'x+y'},
     ...(VOL?[{type:'bar',x:o.date,y:o.volume,yaxis:'y2',name:'出来高',showlegend:false,
@@ -337,6 +364,7 @@ function drawChart(F){
   const LAYOUT={
     title:{text:NARROW()?`<b>${DATA.display_name||DATA.name}</b> ${F.label} ${fmt(rp(F.close))}`:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:NARROW()?{l:38,r:6,t:34,b:26}:{l:50,r:20,t:40,b:30}, showlegend:!NARROW(), dragmode:TOUCH()?false:'zoom',xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
+    ...(VP?{xaxis2:{overlaying:'x',anchor:'y',range:[0,Math.max(...VP.bins.map(z=>z.v))/(NARROW()?0.38:0.3)],visible:false,fixedrange:true,showgrid:false}}:{}),
     ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
     ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
     yaxis:Object.assign({domain:DOM.p,tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
@@ -558,6 +586,12 @@ function drawSide(F){
   if(DATA.sr&&DATA.sr.levels&&DATA.sr.levels.length){const SR=DATA.sr;
     h+=`<h2>水平線（支持線・抵抗線）</h2><div class="muted" style="margin-bottom:6px">主役は<b>お椀の水平線</b>＝過去のトレンドの起点（戻り売り・押し目買いの起点）から大きく離れたあと、価格が全戻ししてきた価格（深く・大きく・初回の戻りほど強い）。移動平均線（20・210）との重なり、基準線・先行スパン2の横ばい、ネックライン、半値戻し、大きなローソク足の四本値、キリの良い節目を加点し、その後に何度も抜けた価格は減点。現在値の上下それぞれ最大4本を、強い順に濃く太く描く（二重線＝お椀、○＝その起点）。使った足：${SR.used.join('・')}</div><table><tr><th>線</th><th class="num">値段</th><th class="num">現値比</th><th>強さ</th><th>根拠</th></tr>`+
       SR.levels.map(z=>`<tr><td><b style="color:${z.side==='res'?'#c0392b':'#1f5f8b'}">${z.name}</b><br><span class="muted">${z.side==='res'?'抵抗':'支持'}</span></td><td class="num"><b>${fmt(z.price)}</b></td><td class="num">${z.pct>0?'+':''}${z.pct}%</td><td><div style="width:60px;height:7px;background:#eee;border-radius:4px"><div style="width:${Math.round(z.str*100)}%;height:7px;border-radius:4px;background:${z.side==='res'?'#c0392b':'#1f5f8b'}"></div></div>${z.tags.map(t=>`<span class="tag" style="margin-top:3px">${t}</span>`).join(' ')}</td><td class="muted" style="font-size:11.5px">${z.why}</td></tr>`).join('')+'</table>';}
+  {const VP=vpOf(F); if(VP){const rpV=v=>F.inverted?2*F.inverted.ref-v:v, pz=VP.bins[VP.poc], c0=VP.close, lo=Math.min(rpV(VP.va[0]),rpV(VP.va[1])), hi=Math.max(rpV(VP.va[0]),rpV(VP.va[1])), cr=rpV(c0);
+    const where=cr>hi?'ボリュームゾーンより上（上で買った人が多く、下の厚い帯が支えになりやすい）':cr<lo?'ボリュームゾーンより下（上の厚い帯で買った人の戻り売りが出やすい）':'ボリュームゾーンの中（売り買いが交錯しやすい）';
+    h+=`<h2>価格帯別出来高（ボリュームゾーン）</h2><div class="muted" style="margin-bottom:6px">チャート左の灰色の横棒＝表示中の ${VP.bars} 本の出来高を、各足の高値〜安値に均等に割り振って値段の帯ごとに合計したもの。棒が長い帯ほど、そこでポジションを持った人が多い（しこりになりやすく、支持・抵抗として働きやすい）。濃い灰色＝最も多い帯、やや濃い灰色＝出来高の 70% が集まる帯</div>
+      <div class="verdict" style="background:#f4f4f4;border-left-color:#777"><b>最も厚い帯:</b> ${fmt(Math.min(rpV(pz.lo),rpV(pz.hi)))}〜${fmt(Math.max(rpV(pz.lo),rpV(pz.hi)))}（${pz.pct.toFixed(1)}%）<br><b>出来高の 70% が集まる帯:</b> ${fmt(lo)}〜${fmt(hi)}<br><b>現在値 ${fmt(cr)}:</b> ${where}</div>
+      <table><tr><th>厚い帯</th><th class="num">値段</th><th class="num">現値比</th><th class="num">出来高の割合</th></tr>`+
+      VP.peaks.map((z,i)=>{const m=rpV(z.mid); return `<tr><td>${i+1}</td><td class="num"><b>${fmt(Math.min(rpV(z.lo),rpV(z.hi)))}〜${fmt(Math.max(rpV(z.lo),rpV(z.hi)))}</b></td><td class="num">${m>cr?'+':''}${((m/cr-1)*100).toFixed(1)}%</td><td class="num">${z.pct.toFixed(1)}%</td></tr>`}).join('')+'</table>'}}
   h+=`<h2>相場水準 ― どこにあるか・どう機能してきたか</h2><div class="muted" style="margin-bottom:6px">もみ合いは「ある価格を相場水準に同程度の高値・安値を作る変動」。水準を初めて付けた起点からの基本数値日に、高値・安値・同水準が現れやすく、放れはこの水準から出発しやすい。水準×2−反対側の極値 ＝ もみ合いの限界。<br><b>半値水準</b>：ある期間の高値と安値の半値を出し、期間の始まりから時間軸を過去へさかのぼって最初にその値段を付けた日（図の A）を起点に基本数値を数える。起点からの基本数値日は ①高値 ③安値 ②水準そのもの にとどまりやすい。期間は直近 26・52・76・129・172・257 本と定型三波動の A 以降。行をクリックするとチャートで強調。</div>`+
     (()=>{const lv=F.levels.slice(0,6); if(!lv.length) return ''; const near=[...lv].sort((a,b)=>Math.abs(a.pct)-Math.abs(b.pct))[0], act=lv.filter(l=>l.touch26>=6);
       const up=lv.filter(l=>l.price>F.close).sort((a,b)=>a.price-b.price)[0], dn=lv.filter(l=>l.price<F.close).sort((a,b)=>b.price-a.price)[0];
