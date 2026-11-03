@@ -423,12 +423,12 @@ function drawCalcBox(F,w,pend){ const el=$('#calcbox'); if(!w){el.innerHTML='';r
   const form={E:`B ${sg} (B−A)`,N:`C ${sg} (B−A)`,V:`B ${sg} (B−C)`,NT:`C ${sg} (C−A)`};
   const close=F.close;
   el.innerHTML=`<div style="border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:${pend?'#fff6f4':'#fff'}">
-    <div style="margin-bottom:4px"><b>${up?'上げ':'下げ'}三波動の計算値</b>${w.manual&&!pend?' <span class="tag" style="background:#b03a2e;color:#fff">手動</span>':''}${pend?' <span class="tag" style="background:#b03a2e;color:#fff">未計算（見込み）</span> <span class="muted">「A・B・C で再計算」で確定し、達成判定・D・変化日も更新</span>':''}
+    <div style="margin-bottom:4px"><b>${up?'上げ':'下げ'}三波動の計算値</b>${w.manual&&!pend?' <span class="tag" style="background:#b03a2e;color:#fff">手動</span>':''}${pend?' <span class="tag" style="background:#b03a2e;color:#fff">未計算（見込み）</span> <span class="muted">自動で再計算中（達成判定・D・変化日も更新）</span>':''}
     <span class="muted">　A ${dates[0]} ${f(a)} → B ${dates[1]} ${f(b)} → C ${dates[2]} ${f(c)}${inv?'（反転チャート：式は反転値で計算、表示は実際の価格）':''}</span></div>
     <table><tr><th>種類</th><th>式</th><th class="num">計算値</th><th class="num">現値比</th><th>達成</th></tr>`+
     ['E','N','V','NT'].map(k=>`<tr><td><b style="color:${cc[k]}">${k}</b></td><td class="muted">${form[k]} = ${f(k==='N'||k==='NT'?c:b)} ${sg} ${fmt(Math.abs(k==='V'?b-c:k==='NT'?c-a:b-a))}</td><td class="num"><b>${f(calc[k])}</b></td><td class="num">${((rp(calc[k])/rp(close)-1)*100).toFixed(1)}%</td><td>${rp(calc[k])<=0?'<span class="ng">0 以下（対象外）</span>':pend?'<span class="muted">—</span>':ach[k]?'<span class="ok">達成</span>':'未達'}</td></tr>`).join('')+'</table></div>'}
 function updRecalc(){const on=!!(PEND&&ABC&&PEND.key===ABC.key); $('#recalc').disabled=!on;
-  $('#recalcnote').textContent=tr(on?'未計算：A・B・C を動かしました。ボタンを押すと変化日・計算値・D を引き直します':(ABC?(TOUCH()?'A・B・C の丸を指で押したまま動かすと ▲▼ に吸着します':'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。上げ／下げは A→B の向きで自動判定'):''))}
+  $('#recalcnote').textContent=tr(on?'A・B・C を動かしました。計算値・D・変化日を自動で引き直しています（失敗したときはボタンで再実行）':(ABC?(TOUCH()?'A・B・C の丸を指で押したまま動かすと ▲▼ に吸着し、離すと自動で再計算します':'A・B・C の丸をドラッグして ▲▼（高値・安値どちらでも）へ動かせます。離すと計算値・D・変化日を自動で再計算。上げ／下げは A→B の向きで自動判定'):''))}
 const TOUCH=()=>window.matchMedia('(pointer: coarse)').matches, NARROW=()=>window.innerWidth<=700;
 function setupDrag(gd){
   if(gd._abcDrag) return; gd._abcDrag=true;
@@ -451,7 +451,7 @@ function setupDrag(gd){
     drawChart(ABC.F);
     const [a,b,c]=ABC.full;
     if(!(a<b&&b<c)) st('A → B → C の順（A が最も古い）に並ぶように置いてください',true);
-    else st('位置を変えました。「A・B・C で再計算」を押すと変化日・計算値・D を引き直します')};
+    else recalc()};   // 置いた時点で自動的に計算値・D・変化日を引き直す
   // マウス・ペン
   gd.addEventListener('pointerdown',e=>{ if(e.pointerType==='touch') return; const k=hit(e.clientX,e.clientY,16); if(k<0) return;
     e.preventDefault(); e.stopPropagation(); start(k)},true);
@@ -469,11 +469,12 @@ function setupDrag(gd){
 }
 async function recalc(){
   if(!PEND||!ABC||PEND.key!==ABC.key) return;
-  const [a,b,c]=PEND.full, F=ABC.F, kinds=PEND.kind.join('');
+  const [a,b,c]=PEND.full, F=ABC.F, kinds=PEND.kind.join(''), mine=PEND;
   if(!(a<b&&b<c)){st('A → B → C の順（A が最も古い）に並ぶように置いてください',true); return}
   $('#recalc').disabled=true; st('指定した A・B・C で計算値・D・変化日を計算中…');
   try{const r=await fetch(`/api/wave_custom?code=${encodeURIComponent(APICODE())}&frame=${FRAME}&period=${$('#period').value}&a=${a}&b=${b}&c=${c}&kinds=${kinds}`);
     const j=await r.json(); if(!r.ok) throw new Error(j.detail);
+    if(PEND!==mine) return;   // 計算中にまた動かした → 新しい位置の計算結果を待つ
     PEND=null; F.waves=[j.wave].concat(F.waves.filter(w=>!w.manual)); saveManual(FRAME,j.wave); $('#clearabc').style.display='inline-block'; SEL_WAVE=0; drawChart(F); drawSide(F);
     const warn=j.wave.note&&j.wave.note.includes('注意');
     st(`再計算しました（${j.wave.dir==='up'?'上げ':'下げ'}三波動）：A ${j.wave.A[0]} ${fmt(ABC.rp(j.wave.A[1]))} → B ${j.wave.B[0]} ${fmt(ABC.rp(j.wave.B[1]))} → C ${j.wave.C[0]} ${fmt(ABC.rp(j.wave.C[1]))}${warn?'　'+j.wave.note.split('注意: ')[1]:''}`, warn)
