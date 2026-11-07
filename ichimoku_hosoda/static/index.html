@@ -211,7 +211,8 @@ function drawChart(F){
   const VOL=LY('ly_vol')&&o.volume&&o.volume.some(v=>v>0);
   const VP=LY('ly_vp')?vpOf(F):null, rpV=v=>F.inverted?2*F.inverted.ref-v:v;
   // 信用残（週次）を日足・週足の時間軸に合わせる：各週の値を、その日以前で最も近い足に置く
-  const MGR=(DATA.margin&&DATA.margin.rows)||[], isD=/^(daily|weekly)/.test(FRAME);
+  const MD=DATA.margin&&DATA.margin.daily&&DATA.margin.daily.rows, MDAY=!!(MD&&MD.length&&FRAME.startsWith('daily'));
+  const MGR=(MDAY?MD:(DATA.margin&&DATA.margin.rows))||[], isD=/^(daily|weekly)/.test(FRAME);
   const mg=(LY('ly_mg')&&isD&&MGR.length)?(()=>{const pts=[]; MGR.forEach(r=>{ if(!/^\d{4}-/.test(r.date)) return;
       let k=-1; for(let i=o.date.length-1;i>=0;i--){ if(o.date[i]<=r.date){k=i;break} } if(k<0) return; pts.push({x:o.date[k],r})});
       return pts.length?pts:null})():null;
@@ -237,10 +238,10 @@ function drawChart(F){
      increasing:{line:{color:'#c0392b',width:1}},decreasing:{line:{color:'#1f5f8b',width:1}},whiskerwidth:.3,hoverinfo:'x+y'},
     ...(VOL?[{type:'bar',x:o.date,y:o.volume,yaxis:'y2',name:'出来高',showlegend:false,
       marker:{color:o.close.map((c,i)=>c>=o.open[i]?'rgba(192,57,43,.55)':'rgba(31,95,139,.55)')},hovertemplate:'出来高 %{x}<br>%{y:,.0f}<extra></extra>'}]:[]),
-    ...(mg?[{x:mg.map(p=>p.x),y:mg.map(p=>p.r.buy),yaxis:'y3',name:'買い残',mode:'lines+markers',line:{color:'#c0392b',width:1.5,shape:'hv'},marker:{size:4},
-              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('buy',p.r.date)]),hovertemplate:'買い残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<br>買い方損益（推定） %{customdata[2]}<extra></extra>'},
-             {x:mg.map(p=>p.x),y:mg.map(p=>p.r.sell),yaxis:'y3',name:'売り残',mode:'lines+markers',line:{color:'#1f5f8b',width:1.5,shape:'hv'},marker:{size:4},
-              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('sell',p.r.date)]),hovertemplate:'売り残 %{customdata[0]}<br>%{y:,.0f}株<br>信用倍率 %{customdata[1]}<br>売り方損益（推定） %{customdata[2]}<extra></extra>'}]:[]),
+    ...(mg?[{x:mg.map(p=>p.x),y:mg.map(p=>p.r.buy),yaxis:'y3',name:MDAY?'買い残（日々）':'買い残',mode:'lines+markers',line:{color:'#c0392b',width:1.5,shape:MDAY?'linear':'hv'},marker:{size:MDAY?2:4},
+              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('buy',p.r.date),p.r.buy_chg==null?'-':(p.r.buy_chg>0?'+':'')+fmt(p.r.buy_chg)]),hovertemplate:'買い残 %{customdata[0]}<br>%{y:,.0f}株（'+(MDAY?'前日比':'前週比')+' %{customdata[3]}）<br>信用倍率 %{customdata[1]}<br>買い方損益（推定） %{customdata[2]}<extra></extra>'},
+             {x:mg.map(p=>p.x),y:mg.map(p=>p.r.sell),yaxis:'y3',name:MDAY?'売り残（日々）':'売り残',mode:'lines+markers',line:{color:'#1f5f8b',width:1.5,shape:MDAY?'linear':'hv'},marker:{size:MDAY?2:4},
+              customdata:mg.map(p=>[p.r.date,p.r.ratio,MPL('sell',p.r.date),p.r.sell_chg==null?'-':(p.r.sell_chg>0?'+':'')+fmt(p.r.sell_chg)]),hovertemplate:'売り残 %{customdata[0]}<br>%{y:,.0f}株（'+(MDAY?'前日比':'前週比')+' %{customdata[3]}）<br>信用倍率 %{customdata[1]}<br>売り方損益（推定） %{customdata[2]}<extra></extra>'}]:[]),
     {x:Ls.date,y:Ls.span_tk,name:'先行(基準転換)',line:{color:'#8e9aaf',width:1},hoverinfo:'skip'},
     {x:Ls.date,y:Ls.span_52,name:'先行(52)',line:{color:'#8e9aaf',width:1,dash:'dot'},fill:'tonexty',fillcolor:'rgba(142,154,175,.18)',hoverinfo:'skip'},
     {x:Ls.date,y:Ls.tenkan,name:'転換線(9)',line:{color:'#d35400',width:1.3}},
@@ -366,7 +367,7 @@ function drawChart(F){
     margin:NARROW()?{l:38,r:6,t:34,b:26}:{l:50,r:20,t:40,b:30}, showlegend:!NARROW(), dragmode:TOUCH()?false:'zoom',xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
     ...(VP?{xaxis2:{overlaying:'x',anchor:'y',range:[0,Math.max(...VP.bins.map(z=>z.v))/(NARROW()?0.38:0.3)],visible:false,fixedrange:true,showgrid:false}}:{}),
     ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
-    ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
+    ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:MDAY?'信用残（日々）':'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
     yaxis:Object.assign({domain:DOM.p,tickformat:',.0f',gridcolor:'#eee',range:[Math.min(ymin-span*.08,...yext.map(v=>v-span*.04)),Math.max(ymax+span*.12,...yext.map(v=>v+span*.05))]}, F.inverted?(()=>{const r=F.inverted.ref, step=niceStep(span/8), vals=[]; for(let v=Math.ceil((ymin-span*.08)/step)*step; v<=ymax+span*.08; v+=step) vals.push(v); return {tickvals:vals,ticktext:vals.map(v=>fmt(2*r-v)),title:{text:'実際の価格（上下反転）',font:{size:11}}}})():{}),shapes,annotations:ann,legend:{orientation:'h',y:-0.05,font:{size:11}},
     hovermode:'closest',paper_bgcolor:'#fff',plot_bgcolor:'#fff'};
   window.ANN_PRIO=(LAYOUT.annotations||[]).map(a=>annPrio(a.text)); trPlot(traces,LAYOUT);
@@ -618,6 +619,14 @@ function drawSide(F){
     F.waves.slice(0,12).map((w,i)=>`<tr class="wv${i===SEL_WAVE?' sel':''}" data-i="${i}" style="cursor:pointer"><td>${i===SEL_WAVE?'▶':''}</td><td>${w.manual?'<span class="tag" style="background:#b03a2e;color:#fff">手動</span><br>':w.tag?'<span class="tag" style="background:#8a5a1e;color:#fff">定型</span><br>':''}${w.dir==='up'?'上げ':'下げ'}${w.tag&&!w.manual?`<div class="muted" style="font-size:10.5px;max-width:110px">${w.tag.replace(/^定型/,'')}</div>`:''}</td><td><b>${w.A[0]}</b><br>${fmt(w.A[1])} ${'★'.repeat(w.A_rank||1)}</td><td class="muted">B ${w.B[0]} ${fmt(w.B[1])}<br>C ${w.C[0]} ${fmt(w.C[1])}</td><td class="num">AB ${w.ab}<br>BC ${w.bc}<br>AC ${w.ac}</td><td>${Object.entries(w.calc).map(([k,v])=>`<span class="tag ${k}">${k}</span>${fmt(v)}${w.achieved[k]?' <span class="ok">✓</span>':''}`).join('<br>')}</td><td class="muted">${w.d_info.map(d=>`${d.rel}: ${d.date||'-'}${d.offset>=0?` (+${d.offset}${u})`:''}`).join('<br>')}</td></tr>`).join('')+'</table>';
   h+=`<h2>基本数値足（陰連・陽連）</h2><div class="nb">`+F.nbars.filter(n=>n.current).map(n=>`<div><div class="muted">${n.label}</div><b>${n.current.sign}${n.current.len}連</b> <span class="muted">${n.current.start}〜</span><div class="hist">${n.history.map(x=>`<span class="${x.sign}">${x.sign}${x.len}</span>`).join('')}</div><div class="muted">分岐: ${n.thresholds.slice(0,3).map(t=>`${t.ahead}本後 ${fmt(t.open)}`).join(' / ')}</div></div>`).join('')+'</div>';
   if(FRAME.startsWith('daily')&&!(DATA.margin&&DATA.margin.skip)){ const M=DATA.margin;
+    const DD=M&&M.daily&&M.daily.rows;
+    if(DD&&DD.length){const r10=DD.slice(-10).reverse(), a=DD[Math.max(0,DD.length-6)], z=DD[DD.length-1];
+      const sg=v=>v==null?'-':(v>0?'+':'')+fmt(v), d5=(k)=>a[k]!=null&&z[k]!=null?z[k]-a[k]:null;
+      h+=`<h2>信用残の推移（日々・直近10営業日）</h2><div class="muted" style="margin-bottom:6px">${a.date}→${z.date}（5営業日）: 買い残 ${sg(d5('buy'))}、売り残 ${sg(d5('sell'))}、信用倍率 ${a.ratio??'-'}→${z.ratio??'-'}。チャート下段の信用残も日足では日々の値で描く</div>
+        <table><tr><th>日付</th><th class="num">買い残</th><th class="num">前日比</th><th class="num">売り残</th><th class="num">前日比</th><th class="num">倍率</th></tr>`+
+        r10.map(r=>`<tr><td>${r.date}</td><td class="num">${fmt(r.buy)}</td><td class="num ${r.buy_chg>0?'ng':'ok'}">${sg(r.buy_chg)}</td><td class="num">${fmt(r.sell)}</td><td class="num">${sg(r.sell_chg)}</td><td class="num">${r.ratio??'-'}</td></tr>`).join('')+'</table>'+
+        (M.daily.source&&M.daily.source!=='synthetic'?`<div class="muted">出所: ${M.daily.source}</div>`:'')}
+    else if(M&&M.daily_error) h+=`<div class="muted" style="margin-top:8px">日々の信用残は取得できませんでした（週次のみ表示）</div>`;
     h+=`<h2>信用残の推移（週次・直近約1か月。長い推移はチャート下段）</h2>`;
     if(!M||M.error){h+=`<div class="muted">取得できませんでした${M&&M.error?'：'+M.error:''}</div>`}
     else{const rows=M.rows.slice(-5); const last=rows[rows.length-1], first=rows[0];

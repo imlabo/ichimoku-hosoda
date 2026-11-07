@@ -83,6 +83,64 @@ def fetch_kabutan(c: str, weeks: int = 60) -> dict:
     return _finish(rows, weeks, base)
 
 
+def _parse_daily_tables(html: str) -> list[dict]:
+    """日付＋売り残・買い残（または貸株残・融資残）の列を持つ表をすべて読む。"""
+    rows: list[dict] = []
+    try:
+        tables = pd.read_html(io.StringIO(html))
+    except ValueError:
+        return rows
+    for t in tables:
+        if isinstance(t.columns, pd.MultiIndex):
+            t.columns = [" ".join(str(x) for x in c if "Unnamed" not in str(x)) for c in t.columns]
+        cols = [str(x) for x in t.columns]
+        def col(*keys, avoid=("額", "比", "前日", "前週")):
+            for k in keys:
+                for i, x in enumerate(cols):
+                    if k in x and not any(a in x for a in avoid):
+                        return t.columns[i]
+            return None
+        scol, bcol = col("売り残", "売残", "貸株残"), col("買い残", "買残", "融資残")
+        dcol = col("日付", "年月日", "日時") or t.columns[0]
+        if scol is None or bcol is None:
+            continue
+        rcol = col("倍率")
+        for _, r in t.iterrows():
+            m = re.search(r"(\d{2,4})/(\d{1,2})/(\d{1,2})", str(r[dcol]))
+            if not m:
+                continue
+            y = int(m.group(1)); y = y + 2000 if y < 100 else y
+            rows.append({"date": f"{y}-{int(m.group(2)):02d}-{int(m.group(3)):02d}",
+                         "sell": _num(r[scol]), "buy": _num(r[bcol]),
+                         "ratio": _num(r[rcol]) if rcol is not None else None})
+    return rows
+
+
+def fetch_kabutan_daily(c: str, days: int = 120) -> dict:
+    """株探の日々の信用残（https://kabutan.jp/stock/kabuka?code=<code>&margin_balances=1&ashi=day）。
+    1ページ約30日分。表の列名が変わっても「日付・売り残・買い残」（または貸株残・融資残）で探す。"""
+    errs = []
+    for base, pager in ((f"https://kabutan.jp/stock/kabuka?code={c}&margin_balances=1&ashi=day", "&page={}"),
+                        (f"https://s.kabutan.jp/stocks/{c}/historical_margins/daily/", "?page={}")):
+        rows: list[dict] = []
+        try:
+            for page in range(1, (days + 29) // 30 + 1):
+                got = _parse_daily_tables(_get(base + (pager.format(page) if page > 1 else "")))
+                new = [x for x in got if x["date"] not in {y["date"] for y in rows}]
+                rows += new
+                if len(new) < 20:
+                    break
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"{base}: {e}")
+        if rows:
+            res = _finish(rows, days, base)
+            if "rows" in res:
+                return res
+        else:
+            errs.append(f"{base}: 表なし")
+    return {"error": " / ".join(errs)}
+
+
 def fetch_margin(code: str, weeks: int = 60) -> dict:
     """{'rows': [{'date','sell','buy','ratio','sell_chg','buy_chg'}...], 'source': url} / 失敗時は {'error': ...}。"""
     c = re.sub(r"\.T$", "", code.strip().upper())
@@ -90,12 +148,21 @@ def fetch_margin(code: str, weeks: int = 60) -> dict:
         return {"error": "信用残は東証個別銘柄のみ"}
     errs = []
     try:
-        return fetch_kabutan(c, weeks)
+        res = fetch_kabutan(c, weeks)
     except Exception as e:  # noqa: BLE001
         errs.append(f"株探: {e}")
-    res = _fetch_yahoo(c, weeks)
-    if "error" in res:
-        res["error"] = " / ".join(errs + ["Yahoo: " + res["error"]])
+        res = _fetch_yahoo(c, weeks)
+        if "error" in res:
+            res["error"] = " / ".join(errs + ["Yahoo: " + res["error"]])
+    # 日々の信用残（株探）。取れなければ週次だけで動く
+    try:
+        d = fetch_kabutan_daily(c)
+    except Exception as e:  # noqa: BLE001
+        d = {"error": str(e)}
+    if "rows" in d:
+        res["daily"] = d
+    else:
+        res["daily_error"] = d.get("error")
     return res
 
 
@@ -163,7 +230,13 @@ def synthetic_margin(end=None, weeks: int = 30) -> dict:
     for i, x in enumerate(rows):
         x["buy_chg"] = rows[i]["buy"] - rows[i - 1]["buy"] if i else None
         x["sell_chg"] = rows[i]["sell"] - rows[i - 1]["sell"] if i else None
-    return {"rows": rows, "source": "synthetic"}
+    # 日々（直近約 120 営業日）：最後の週次値に近づくように日ごとに揺らす
+    drows, b, sl = [], rows[-25]["buy"], rows[-25]["sell"]
+    for d in pd.bdate_range(end=dates[-1] + pd.Timedelta(days=3), periods=120):
+        b += int(rng.normal(0, 25_000)); sl += int(rng.normal(0, 10_000))
+        drows.append({"date": d.strftime("%Y-%m-%d"), "sell": sl, "buy": b, "ratio": round(b / max(sl, 1), 2)})
+    daily = _finish(drows, 120, "synthetic")
+    return {"rows": rows, "source": "synthetic", "daily": daily}
 
 
 def estimate_pl(m: dict, daily: pd.DataFrame, window: int = 26) -> dict | None:
