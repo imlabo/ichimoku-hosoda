@@ -1,0 +1,44 @@
+name: probe-jpx
+on:
+  push:
+    branches: [probe-jpx]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install openpyxl pandas
+      - run: |
+          mkdir -p probe && cd probe
+          UA="Mozilla/5.0"
+          curl -sSL -A "$UA" https://www.jpx.co.jp/markets/derivatives/trading-volume/index.html -o tv.html
+          OI=$(grep -oE 'href="[^"]*open_interest\.xlsx"' tv.html | head -1 | sed 's/href="//;s/"$//')
+          curl -sSL -A "$UA" "https://www.jpx.co.jp$OI" -o oi.xlsx
+          curl -sSL -A "$UA" https://www.jpx.co.jp/markets/derivatives/settlement-price/index.html -o sp.html
+          grep -oE 'href="[^"]*\.(csv|zip|xlsx)"' sp.html | head -20 > sp_links.txt
+          RB=$(grep -oE 'href="[^"]*rb[0-9]{8}\.csv"' sp.html | head -1 | sed 's/href="//;s/"$//')
+          curl -sSL -A "$UA" "https://www.jpx.co.jp$RB" -o rb.csv
+          python3 - <<'PY'
+          import pandas as pd
+          out=open('oi_dump.txt','w')
+          x=pd.ExcelFile('oi.xlsx')
+          for sh in x.sheet_names:
+              df=x.parse(sh,header=None)
+              out.write(f'=== SHEET {sh} shape={df.shape}\n')
+              out.write(df.head(40).to_csv(index=False))
+              # rows mentioning 7203 or TOYOTA or 有価
+              m=df.astype(str).apply(lambda r: ' | '.join(r), axis=1)
+              hits=m[m.str.contains('7203|TOYOTA|トヨタ|有価|6758|SONY|ソニー|285A|KIOXIA', regex=True)]
+              out.write('--- hits\n'+'\n'.join(hits.head(60).tolist())+'\n')
+          raw=open('rb.csv','rb').read().decode('cp932','replace').splitlines()
+          o2=open('rb_dump.txt','w'); o2.write('\n'.join(raw[:5])+'\n--- 7203\n')
+          o2.write('\n'.join([l for l in raw if '7203' in l or '6758' in l][:80]))
+          names=sorted({l.split(',')[1].split('_')[0]+'_'+l.split(',')[1].split('_')[1] for l in raw if l.count(',')>5 and '_' in l.split(',')[1]})
+          o2.write('\n--- prefixes '+str(len(names))+'\n'+'\n'.join(names[:300]))
+          PY
+          rm -f oi.xlsx rb.csv tv.html sp.html
+      - run: |
+          git config user.name probe; git config user.email probe@example.com
+          git add probe && git commit -m "probe output" && git push
