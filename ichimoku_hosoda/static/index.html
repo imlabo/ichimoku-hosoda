@@ -106,6 +106,7 @@ tr.wv:hover{background:#fbf3e6} tr.wv.sel{background:#f7e9d2}
   <button id="lytoggle" type="button">表示設定 ▾</button><span id="lyopts">
   表示: <label><input type="checkbox" id="ly_sr" checked> 水平線</label>
   <label><input type="checkbox" id="ly_vp" checked> 価格帯別出来高</label>
+  <label><input type="checkbox" id="ly_opt" checked> オプション建玉</label>
   <label><input type="checkbox" id="ly_level" checked> 相場水準</label>
   <label><input type="checkbox" id="ly_calc" checked> 計算値</label>
   <label><input type="checkbox" id="ly_cd" checked> 変化日</label>
@@ -138,9 +139,24 @@ async function run(){
     const r=await fetch(`/api/analyze?code=${encodeURIComponent(code)}&period=${$('#period').value}&market=${$('#market').value}`);
     if(!r.ok){const j=await r.json().catch(()=>({detail:r.statusText})); throw new Error(j.detail)}
     DATA=await r.json(); FRAME='daily'; SEL_WAVE=0; render(); st(`${DATA.display_name?DATA.display_name+'（'+DATA.name+'）':DATA.name}  ${DATA.from} 〜 ${DATA.to}（${DATA.bars}本）`);
+    loadOpt();
   }catch(e){st(e.message,true)} finally{$('#go').disabled=false}
 }
 $('#go').onclick=()=>{hideSugg();run()};
+// ---- 個別銘柄オプション（米国株＝yfinance、日本株＝JPX）。分析とは別に後から読み込み、届いたら描き直す
+let OPT_EXP=0;
+async function loadOpt(){
+  const D=DATA; if(!D||!['us','jp','demo'].includes(D.market)) return;
+  D.options={loading:true}; OPT_EXP=0;
+  try{const f=D.frames.daily, sp=f.inverted?null:f.close;
+    const r=await fetch(`/api/options?code=${encodeURIComponent(APICODE())}&market=${D.market}${sp?'&spot='+sp:''}`);
+    const j=await r.json(); if(DATA!==D) return; D.options=j;
+    if(j.expiries){const k=j.expiries.findIndex(e=>e.days>=5); OPT_EXP=k>=0?k:0}
+  }catch(e){ if(DATA===D) D.options={error:e.message} }
+  if(DATA===D){ const F=D.frames[FRAME]; drawChart(F); drawSide(F); }
+}
+function setOptExp(i){OPT_EXP=i; const F=DATA.frames[FRAME]; drawChart(F); drawSide(F)}
+const OPTX=()=>{const O=DATA&&DATA.options; return O&&O.expiries&&O.expiries.length?O.expiries[Math.min(OPT_EXP,O.expiries.length-1)]:null};
 let SUGG=[], SUGG_I=-1, sTimer=null;
 const hideSugg=()=>{$('#sugg').style.display='none'; SUGG_I=-1};
 const pick=i=>{const x=SUGG[i]; if(!x) return; $('#code').value=x.code; hideSugg(); run()};
@@ -180,7 +196,7 @@ function render(){
   ensureManual(DATA.frames[FRAME]?FRAME:base);
 }
 let SEL_LEVEL=null;
-['ly_sr','ly_vp','ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA){drawChart(DATA.frames[FRAME]); if(id==='bars'){drawSide(DATA.frames[FRAME]); trDom($('#side'))}}}));
+['ly_sr','ly_vp','ly_opt','ly_level','ly_calc','ly_cd','ly_d','ly_acd','ly_piv','ly_vol','ly_mg','bars'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(DATA){drawChart(DATA.frames[FRAME]); if(id==='bars'){drawSide(DATA.frames[FRAME]); trDom($('#side'))}}}));
 const LY=id=>$('#'+id).checked;
 $('#lytoggle').onclick=()=>{const L=$('#layers'); L.classList.toggle('open'); $('#lytoggle').textContent=tr(L.classList.contains('open')?'表示設定 ▴':'表示設定 ▾')};
 
@@ -205,7 +221,9 @@ function vpOf(F){
   const peaks=bins.map((z,k)=>({k,...z})).filter(z=>z.v>=(bins[z.k-1]?bins[z.k-1].v:0)&&z.v>=(bins[z.k+1]?bins[z.k+1].v:0)&&z.pct>=100/NB).sort((x,y)=>y.v-x.v).slice(0,4);
   return {bins, step, poc, va:[bins[a].lo, bins[b].hi], peaks, close:cl[cl.length-1], bars:hi.length};
 }
+let OPTMAX=0;
 function drawChart(F){
+  OPTMAX=0;
   const nb=+$('#bars').value, O=F.ohlc, n=O.date.length, from=Math.max(0,n-nb);
   const o={date:O.date.slice(from),open:O.open.slice(from),high:O.high.slice(from),low:O.low.slice(from),close:O.close.slice(from),volume:O.volume?O.volume.slice(from):null};
   const VOL=LY('ly_vol')&&o.volume&&o.volume.some(v=>v>0);
@@ -274,6 +292,27 @@ function drawChart(F){
         if(x0!==o.date[0]) traces.push({x:[x0],y:[y],mode:'markers',type:'scatter',showlegend:false,marker:{symbol:'circle-open',size:10,color:`rgba(${col},.9)`,line:{width:2}},hovertemplate:`お椀の起点 ${z.bowl.date}<extra></extra>`});
       } else shapes.push({type:'line',x0:o.date[0],x1:lastX,y0:y,y1:y,line:{color:`rgba(${col},${a})`,width:w,dash:z.str>.6?'solid':'dash'}});
       ann.push({x:o.date[Math.min(o.date.length-1,Math.floor(o.date.length*0.42))],y,text:`${z.name} ${fmt(z.price)}${z.tags.length?' '+z.tags[0]:''}`,showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:10,color:`rgb(${col})`},bgcolor:'rgba(255,255,255,.8)'});
+    });
+  }
+  // ---- オプション建玉（右から伸びる横棒：コール＝橙・プット＝緑）と損益分岐・最大苦痛価格の線
+  const OX=LY('ly_opt')?OPTX():null;
+  if(OX){
+    const ref=F.inverted?F.inverted.ref:null, yv=p=>ref!=null?2*ref-p:p;
+    const S=OX.strikes.filter(z=>{const y=yv(z.strike); return y>=ymin-span*.05&&y<=ymax+span*.05&&((z.call_oi||0)+(z.put_oi||0))>0});
+    if(S.length){
+      const ks=S.map(z=>z.strike).sort((a,b)=>a-b); let st=Infinity; for(let i=1;i<ks.length;i++) st=Math.min(st,ks[i]-ks[i-1]); if(!isFinite(st)) st=span/40;
+      const w=st*0.42, mx=Math.max(...S.map(z=>Math.max(z.call_oi||0,z.put_oi||0)))||1;
+      OPTMAX=mx;
+      const cd=z=>[fmt(z.strike),fmt(z.call_oi||0),z.call_be!=null?fmt(z.call_be):'-',fmt(z.put_oi||0),z.put_be!=null?fmt(z.put_be):'-'];
+      const ht='行使価格 %{customdata[0]}<br>コール建玉 %{customdata[1]}（損益分岐 %{customdata[2]}）<br>プット建玉 %{customdata[3]}（損益分岐 %{customdata[4]}）<extra></extra>';
+      traces.push({type:'bar',orientation:'h',xaxis:'x4',yaxis:'y',y:S.map(z=>yv(z.strike)+(ref!=null?-1:1)*w/2),x:S.map(z=>z.call_oi||0),width:w,name:'コール建玉',showlegend:false,marker:{color:'rgba(230,126,34,.55)'},customdata:S.map(cd),hovertemplate:ht});
+      traces.push({type:'bar',orientation:'h',xaxis:'x4',yaxis:'y',y:S.map(z=>yv(z.strike)-(ref!=null?-1:1)*w/2),x:S.map(z=>z.put_oi||0),width:w,name:'プット建玉',showlegend:false,marker:{color:'rgba(22,160,133,.55)'},customdata:S.map(cd),hovertemplate:ht});
+    }
+    const xr=o.date[Math.max(0,Math.floor(o.date.length*0.70))];
+    [[OX.sigma?DATA.options.spot+OX.sigma:null,'満期の1σ上限','120,120,120','dashdot'],[OX.sigma?DATA.options.spot-OX.sigma:null,'満期の1σ下限','120,120,120','dashdot'],[OX.max_pain,'最大苦痛価格','125,60,152','dash'],[OX.call_be_avg,'コール買い手の平均損益分岐','211,84,0','dot'],[OX.put_be_avg,'プット買い手の平均損益分岐','17,120,100','dot']].forEach(([v,lab,col,dash])=>{
+      if(v==null) return; const y=yv(v); if(y<ymin-span*.1||y>ymax+span*.12) return;
+      shapes.push({type:'line',x0:o.date[0],x1:lastX,y0:y,y1:y,line:{color:`rgba(${col},.85)`,width:1.4,dash}});
+      ann.push({x:xr,y,text:`${lab} ${fmt(v)}`,showarrow:false,xanchor:'right',yanchor:'bottom',font:{size:10,color:`rgb(${col})`},bgcolor:'rgba(255,255,255,.75)'});
     });
   }
   // ---- 相場水準: 起点から右へ線を引き、起点◆と基本数値日の現れ方●を打つ
@@ -365,6 +404,7 @@ function drawChart(F){
   const LAYOUT={
     title:{text:NARROW()?`<b>${DATA.display_name||DATA.name}</b> ${F.label} ${fmt(rp(F.close))}`:`${DATA.display_name?'<b>'+DATA.display_name+'</b>（'+DATA.name+'）':DATA.name}  ${F.label}  終値 ${fmt(rp(F.close))}（${F.last_date}）${F.inverted?'　※チャート上のラベルは実際の価格、右パネルの数値は反転値':''}`,font:{size:13}},
     margin:NARROW()?{l:38,r:6,t:34,b:26}:{l:50,r:20,t:40,b:30}, showlegend:!NARROW(), dragmode:TOUCH()?false:'zoom',xaxis:{rangeslider:{visible:false},type:'category',categoryorder:'array',categoryarray:allDates,tickmode:'auto',nticks:8,tickangle:0,showgrid:false,tickfont:{size:10}},
+    ...(OX&&OPTMAX?{xaxis4:{overlaying:'x',anchor:'y',range:[OPTMAX/(NARROW()?0.3:0.22),0],visible:false,fixedrange:true,showgrid:false}}:{}),
     ...(VP?{xaxis2:{overlaying:'x',anchor:'y',range:[0,Math.max(...VP.bins.map(z=>z.v))/(NARROW()?0.38:0.3)],visible:false,fixedrange:true,showgrid:false}}:{}),
     ...(VOL?{yaxis2:{domain:DOM.v,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:'出来高',font:{size:10}},fixedrange:true}}:{}),
     ...(mg?{yaxis3:{domain:DOM.m,tickformat:'.2s',gridcolor:'#f2f2f2',tickfont:{size:9},title:{text:MDAY?'信用残（日々）':'信用残',font:{size:10}},fixedrange:true,rangemode:'tozero'}}:{}),
@@ -587,6 +627,27 @@ function drawSide(F){
   if(DATA.sr&&DATA.sr.levels&&DATA.sr.levels.length){const SR=DATA.sr;
     h+=`<h2>水平線（支持線・抵抗線）</h2><div class="muted" style="margin-bottom:6px">主役は<b>お椀の水平線</b>＝過去のトレンドの起点（戻り売り・押し目買いの起点）から大きく離れたあと、価格が全戻ししてきた価格（深く・大きく・初回の戻りほど強い）。移動平均線（20・210）との重なり、基準線・先行スパン2の横ばい、ネックライン、半値戻し、大きなローソク足の四本値、キリの良い節目を加点し、その後に何度も抜けた価格は減点。現在値の上下それぞれ最大4本を、強い順に濃く太く描く（二重線＝お椀、○＝その起点）。使った足：${SR.used.join('・')}</div><table><tr><th>線</th><th class="num">値段</th><th class="num">現値比</th><th>強さ</th><th>根拠</th></tr>`+
       SR.levels.map(z=>`<tr><td><b style="color:${z.side==='res'?'#c0392b':'#1f5f8b'}">${z.name}</b><br><span class="muted">${z.side==='res'?'抵抗':'支持'}</span></td><td class="num"><b>${fmt(z.price)}</b></td><td class="num">${z.pct>0?'+':''}${z.pct}%</td><td><div style="width:60px;height:7px;background:#eee;border-radius:4px"><div style="width:${Math.round(z.str*100)}%;height:7px;border-radius:4px;background:${z.side==='res'?'#c0392b':'#1f5f8b'}"></div></div>${z.tags.map(t=>`<span class="tag" style="margin-top:3px">${t}</span>`).join(' ')}</td><td class="muted" style="font-size:11.5px">${z.why}</td></tr>`).join('')+'</table>';}
+  {const O=DATA.options;
+   if(O&&(O.loading||O.error||O.expiries)){
+    h+=`<h2>オプション建玉と損益分岐</h2>`;
+    if(O.loading) h+=`<div class="muted">オプションの建玉を取得中…</div>`;
+    else if(O.error) h+=`<div class="muted">${O.error}</div>`;
+    else{const X=OPTX(), sp=O.spot, pc=v=>v==null?'-':`${v>=sp?'+':''}${((v/sp-1)*100).toFixed(1)}%`;
+      h+=O.no_oi?`<div class="muted" style="margin-bottom:6px">損益分岐は「その価格でオプションを買った人」の目線（コール＝行使価格＋プレミアム、プット＝行使価格−プレミアム）。チャートの灰色の一点鎖線＝満期までの想定変動幅（ATM の IV から出した 1σ。満期に約 68% の確率でこの間に収まる計算）</div>`:`<div class="muted" style="margin-bottom:6px">チャート右の横棒＝行使価格ごとの建玉（残っている枚数。<b style="color:#d35400">橙＝コール</b>・<b style="color:#117864">緑＝プット</b>）。誰が買い手・売り手かは公表されないため、損益分岐は「その価格でオプションを買った人」の目線（コール＝行使価格＋プレミアム、プット＝行使価格−プレミアム）。点線＝建玉で重みづけした平均の損益分岐、紫の破線＝最大苦痛価格（満期にそこで終わると買い手の受け取りが最も少ない値段。満期にかけて引き寄せられやすいとされる）、灰色の一点鎖線＝満期までの想定変動幅（ATM の IV から出した 1σ）</div>`;
+      h+=`<div style="margin:4px 0 8px">満期: `+O.expiries.map((e,i)=>`<button type="button" onclick="setOptExp(${i})" style="margin:2px;padding:2px 8px;${i===OPT_EXP?'background:#d35400;color:#fff;border:1px solid #d35400':''}">${e.exp}（残${e.days}日）</button>`).join('')+`</div>`;
+      const r=(X.pcr==null?'-':X.pcr.toFixed(2)), mood=X.pcr==null?'':X.pcr>1.2?'（プット多め＝下落への備え・弱気寄り）':X.pcr<0.7?'（コール多め＝上昇期待・強気寄り）':'（中立）';
+      h+=`<div class="verdict" style="background:#fdf2e9;border-left-color:#d35400"><b>原資産 ${fmt(sp)}</b>（${O.source}${O.asof?'・'+O.asof:''}）<br>
+        `+(O.no_oi?`<b>行使価格別の建玉は JPX が公表していないため出せません</b>（建玉残高表は有価証券オプションを合計だけ掲載）。清算値段・IV から損益分岐と想定変動幅を出しています`:`<b>建玉:</b> コール ${fmt(X.call_oi)} ／ プット ${fmt(X.put_oi)}（${O.unit}）、P/C建玉比 <b>${r}</b>${mood}<br>
+        <b>最大苦痛価格:</b> ${X.max_pain!=null?fmt(X.max_pain)+'（'+pc(X.max_pain)+'）':'-'}<br>
+        <b>上の壁（現値以上で最もコール建玉が多い行使価格）:</b> ${X.call_wall!=null?fmt(X.call_wall)+'（'+pc(X.call_wall)+'）':'-'}<br>
+        <b>下の壁（現値以下で最もプット建玉が多い行使価格）:</b> ${X.put_wall!=null?fmt(X.put_wall)+'（'+pc(X.put_wall)+'）':'-'}<br>
+        <b>平均の損益分岐:</b> コール買い手 ${X.call_be_avg!=null?fmt(X.call_be_avg)+'（'+pc(X.call_be_avg)+'）':'-'} ／ プット買い手 ${X.put_be_avg!=null?fmt(X.put_be_avg)+'（'+pc(X.put_be_avg)+'）':'-'}`)+
+        (X.sigma?`<br><b>満期までの想定変動幅（ATM IV ${(X.atm_iv*100).toFixed(1)}%・1σ）:</b> ${fmt(sp-X.sigma)}〜${fmt(sp+X.sigma)}`:'')+`</div>`;
+      const near=X.strikes.filter(z=>O.no_oi||(z.call_oi||0)+(z.put_oi||0)>0).sort((a,b)=>Math.abs(a.strike-sp)-Math.abs(b.strike-sp)).slice(0,14).sort((a,b)=>b.strike-a.strike);
+      const sg=v=>v==null||v===0?'':`<span class="muted">（${v>0?'+':''}${fmt(v)}）</span>`;
+      h+=`<table><tr><th class="num">行使価格</th><th class="num">コール建玉</th><th class="num">価格</th><th class="num">損益分岐</th><th class="num">プット建玉</th><th class="num">価格</th><th class="num">損益分岐</th></tr>`+
+        near.map(z=>`<tr${Math.abs(z.strike-sp)===Math.min(...near.map(q=>Math.abs(q.strike-sp)))?' style="background:#fff8e1"':''}><td class="num"><b>${fmt(z.strike)}</b></td><td class="num">${O.no_oi?'-':fmt(z.call_oi||0)+sg(z.call_chg)}</td><td class="num">${z.call_px!=null?fmt(z.call_px):'-'}</td><td class="num">${z.call_be!=null?fmt(z.call_be):'-'}</td><td class="num">${O.no_oi?'-':fmt(z.put_oi||0)+sg(z.put_chg)}</td><td class="num">${z.put_px!=null?fmt(z.put_px):'-'}</td><td class="num">${z.put_be!=null?fmt(z.put_be):'-'}</td></tr>`).join('')+'</table>';
+      h+=`<div class="muted">現値に近い行使価格を最大14本。価格は${O.market==='jp'?'JPX の清算価格（取引がない銘柄は理論価格）':'売り気配・買い気配の中値（無ければ直近値）'}${O.urls?'。出所: '+O.urls.join(' , '):''}</div>`}}}
   {const VP=vpOf(F); if(VP){const rpV=v=>F.inverted?2*F.inverted.ref-v:v, pz=VP.bins[VP.poc], c0=VP.close, lo=Math.min(rpV(VP.va[0]),rpV(VP.va[1])), hi=Math.max(rpV(VP.va[0]),rpV(VP.va[1])), cr=rpV(c0);
     const where=cr>hi?'ボリュームゾーンより上（上で買った人が多く、下の厚い帯が支えになりやすい）':cr<lo?'ボリュームゾーンより下（上の厚い帯で買った人の戻り売りが出やすい）':'ボリュームゾーンの中（売り買いが交錯しやすい）';
     h+=`<h2>価格帯別出来高（ボリュームゾーン）</h2><div class="muted" style="margin-bottom:6px">チャート左の灰色の横棒＝表示中の ${VP.bars} 本の出来高を、各足の高値〜安値に均等に割り振って値段の帯ごとに合計したもの。棒が長い帯ほど、そこでポジションを持った人が多い（しこりになりやすく、支持・抵抗として働きやすい）。濃い灰色＝最も多い帯、やや濃い灰色＝出来高の 70% が集まる帯</div>
