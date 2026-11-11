@@ -1,0 +1,20 @@
++ UA=Mozilla/5.0
++ curl -sSL -A Mozilla/5.0 https://www.jpx.co.jp/markets/statistics-derivatives/daily/index.html -o daily.html
++ grep -oE '(href|src)="[^"]*"' daily.html
++ grep -vE '_assets|\.html"'
++ grep -oE '[A-Za-z0-9_/.-]*(json|zip|Daily_Report)[A-Za-z0-9_/.-]*' daily.html
++ sort -u
+++ grep -oE '[^"]*Daily_Report_OSE_[0-9]{8}\.zip' daily.html
+++ head -1
++ Z=
++ echo ZIP=
+ZIP=
++ '[' -n '' ']'
++ rm -f oi.xlsx rb.csv tv.html sp.html
++ ls -la
+total 56
+drwxr-xr-x 2 runner runner  4096 Nov 11 08:54 .
+drwxr-xr-x 7 runner runner  4096 Nov 11 08:54 ..
+-rw-r--r-- 1 runner runner 38011 Nov 11 08:54 daily.html
+-rw-r--r-- 1 runner runner  1098 Nov 11 08:54 daily_links.txt
+-rw-r--r-- 1 runner runner   448 Nov 11 08:54 log.txt
