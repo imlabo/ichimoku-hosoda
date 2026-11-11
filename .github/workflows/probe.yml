@@ -10,8 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install openpyxl pandas
-      - run: |
+      - shell: bash
+        run: |
+          set +e
           mkdir -p probe && cd probe
+          exec > >(tee log.txt) 2>&1
+          set -x
           UA="Mozilla/5.0"
           curl -sSL -A "$UA" https://www.jpx.co.jp/markets/derivatives/trading-volume/index.html -o tv.html
           OI=$(grep -oE 'href="[^"]*open_interest\.xlsx"' tv.html | head -1 | sed 's/href="//;s/"$//')
@@ -38,7 +42,8 @@ jobs:
           names=sorted({l.split(',')[1].split('_')[0]+'_'+l.split(',')[1].split('_')[1] for l in raw if l.count(',')>5 and '_' in l.split(',')[1]})
           o2.write('\n--- prefixes '+str(len(names))+'\n'+'\n'.join(names[:300]))
           PY
-          rm -f oi.xlsx rb.csv tv.html sp.html
-      - run: |
+          ls -la; head -c 3000 tv.html > tv_head.txt; grep -oE 'href="[^"]*\.(xlsx|csv)"' tv.html | head > tv_links.txt; rm -f oi.xlsx rb.csv tv.html sp.html; true
+      - if: always()
+        run: |
           git config user.name probe; git config user.email probe@example.com
           git add probe && git commit -m "probe output" && git push

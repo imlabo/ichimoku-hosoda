@@ -531,6 +531,20 @@ def api_wave_custom(code: str, frame: str, a: int = -1, b: int = -1, c: int = -1
     return JSONResponse({"wave": wj})
 
 
+@app.get("/api/options")
+def api_options(code: str, market: str = "auto", spot: float | None = None):
+    """個別銘柄オプションの行使価格別 建玉と損益分岐（米国株＝yfinance、日本株＝JPX）。"""
+    from . import options
+    c = code.strip()
+    if market in ("auto", ""):
+        market = "demo" if c.upper() == "DEMO" else data.market_of(data.normalize_symbol(c))
+    sym = data.normalize_symbol(c) if market != "demo" else c
+    try:
+        return JSONResponse(options.fetch(sym, market, spot))
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"error": f"取得失敗: {e}"})
+
+
 @app.get("/api/waves_from")
 def api_waves_from(code: str, frame: str, a_i: int, period: str = "6y"):
     """チャート上で選んだ極（pivot index a_i）を起点 A にした三波動候補を返す。"""
