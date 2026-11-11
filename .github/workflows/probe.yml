@@ -17,13 +17,13 @@ jobs:
           exec > >(tee log.txt) 2>&1
           set -x
           UA="Mozilla/5.0"
-          curl -sSL -A "$UA" https://www.jpx.co.jp/markets/derivatives/trading-volume/index.html -o tv.html
-          OI=$(grep -oE 'href="[^"]*open_interest\.xlsx"' tv.html | head -1 | sed 's/href="//;s/"$//')
-          curl -sSL -A "$UA" "https://www.jpx.co.jp$OI" -o oi.xlsx
-          curl -sSL -A "$UA" https://www.jpx.co.jp/markets/derivatives/settlement-price/index.html -o sp.html
-          grep -oE 'href="[^"]*\.(csv|zip|xlsx)"' sp.html | head -20 > sp_links.txt
-          RB=$(grep -oE 'href="[^"]*rb[0-9]{8}\.csv"' sp.html | head -1 | sed 's/href="//;s/"$//')
-          curl -sSL -A "$UA" "https://www.jpx.co.jp$RB" -o rb.csv
+          curl -sSL -A "$UA" https://www.jpx.co.jp/markets/statistics-derivatives/daily/index.html -o daily.html
+          grep -oE '(href|src)="[^"]*"' daily.html | grep -vE '_assets|\.html"' > daily_links.txt
+          grep -oE '[A-Za-z0-9_/.-]*(json|zip|Daily_Report)[A-Za-z0-9_/.-]*' daily.html | sort -u >> daily_links.txt
+          Z=$(grep -oE '[^"]*Daily_Report_OSE_[0-9]{8}\.zip' daily.html | head -1)
+          echo "ZIP=$Z"
+          [ -n "$Z" ] && curl -sSL -A "$UA" "https://www.jpx.co.jp$Z" -o ose.zip && unzip -o ose.zip -d ose && ls -la ose
+          rm -f oi.xlsx rb.csv tv.html sp.html
           ls -la
       - if: always()
         run: |
