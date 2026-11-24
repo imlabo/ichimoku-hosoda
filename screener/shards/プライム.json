@@ -9271,12 +9271,12 @@
       },
       "sector_hits": 2,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 127200.0,
-      "margin_buy": 1383900.0,
-      "margin_ratio": 10.88,
-      "margin_sell_chg4w": -58.6,
-      "margin_sell_pl": 19.03,
+      "margin_date": "2026-11-20",
+      "margin_sell": 129900.0,
+      "margin_buy": 1425500.0,
+      "margin_ratio": 10.97,
+      "margin_sell_chg4w": -59.7,
+      "margin_sell_pl": 20.33,
       "margin_score": -2
     },
     {
@@ -9308,7 +9308,7 @@
       "basic_number_hit": null,
       "quiet_volume": true,
       "price_score": 7,
-      "score": 10,
+      "score": 7,
       "avg_turnover_20d": 458772175.0,
       "chart": {
         "from": "2026-08-24",
@@ -9692,13 +9692,13 @@
       },
       "sector_hits": 2,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 24600.0,
-      "margin_buy": 69900.0,
-      "margin_ratio": 2.84,
-      "margin_sell_chg4w": 423.4,
-      "margin_sell_pl": 10.14,
-      "margin_score": 3
+      "margin_date": "2026-11-20",
+      "margin_sell": 4800.0,
+      "margin_buy": 65600.0,
+      "margin_ratio": 13.67,
+      "margin_sell_chg4w": -9.4,
+      "margin_sell_pl": 10.16,
+      "margin_score": 0
     },
     {
       "code": "4475",
@@ -10113,12 +10113,12 @@
       },
       "sector_hits": 2,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 330900.0,
-      "margin_buy": 469700.0,
-      "margin_ratio": 1.42,
-      "margin_sell_chg4w": -49.9,
-      "margin_sell_pl": -41.35,
+      "margin_date": "2026-11-20",
+      "margin_sell": 320800.0,
+      "margin_buy": 515800.0,
+      "margin_ratio": 1.61,
+      "margin_sell_chg4w": -35.5,
+      "margin_sell_pl": -41.1,
       "margin_score": -1
     },
     {
@@ -10534,12 +10534,12 @@
       },
       "sector_hits": 2,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 14700.0,
-      "margin_buy": 441000.0,
-      "margin_ratio": 30.0,
-      "margin_sell_chg4w": -70.2,
-      "margin_sell_pl": 5.32,
+      "margin_date": "2026-11-20",
+      "margin_sell": 7800.0,
+      "margin_buy": 266600.0,
+      "margin_ratio": 34.18,
+      "margin_sell_chg4w": -76.6,
+      "margin_sell_pl": 5.36,
       "margin_score": -2
     },
     {
@@ -10571,7 +10571,7 @@
       "basic_number_hit": null,
       "quiet_volume": true,
       "price_score": 3,
-      "score": 5,
+      "score": 3,
       "avg_turnover_20d": 12434334600.0,
       "chart": {
         "from": "2026-08-24",
@@ -10954,13 +10954,13 @@
         "ld": []
       },
       "sector_hits": 1,
-      "margin_date": "2026-11-13",
-      "margin_sell": 5300.0,
-      "margin_buy": 68100.0,
-      "margin_ratio": 12.85,
-      "margin_sell_chg4w": 278.6,
-      "margin_sell_pl": 23.64,
-      "margin_score": 2
+      "margin_date": "2026-11-20",
+      "margin_sell": 3300.0,
+      "margin_buy": 75600.0,
+      "margin_ratio": 22.91,
+      "margin_sell_chg4w": -2.9,
+      "margin_sell_pl": 24.01,
+      "margin_score": 0
     },
     {
       "code": "6370",
@@ -11377,12 +11377,12 @@
         ]
       },
       "sector_hits": 1,
-      "margin_date": "2026-11-13",
-      "margin_sell": 18600.0,
-      "margin_buy": 170700.0,
-      "margin_ratio": 9.18,
-      "margin_sell_chg4w": 195.2,
-      "margin_sell_pl": 23.57,
+      "margin_date": "2026-11-20",
+      "margin_sell": 19500.0,
+      "margin_buy": 155400.0,
+      "margin_ratio": 7.97,
+      "margin_sell_chg4w": 333.3,
+      "margin_sell_pl": 22.93,
       "margin_score": 2
     },
     {
@@ -11414,7 +11414,7 @@
       "basic_number_hit": null,
       "quiet_volume": true,
       "price_score": 3,
-      "score": 5,
+      "score": 3,
       "avg_turnover_20d": 56647548810.0,
       "chart": {
         "from": "2026-08-24",
@@ -11800,13 +11800,13 @@
       },
       "sector_hits": 3,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 361400.0,
-      "margin_buy": 2566500.0,
-      "margin_ratio": 7.1,
-      "margin_sell_chg4w": 34.9,
-      "margin_sell_pl": 34.39,
-      "margin_score": 2
+      "margin_date": "2026-11-20",
+      "margin_sell": 330000.0,
+      "margin_buy": 2507700.0,
+      "margin_ratio": 7.6,
+      "margin_sell_chg4w": 13.8,
+      "margin_sell_pl": 36.01,
+      "margin_score": 0
     },
     {
       "code": "6787",
@@ -11837,7 +11837,7 @@
       "basic_number_hit": null,
       "quiet_volume": true,
       "price_score": 3,
-      "score": 3,
+      "score": 5,
       "avg_turnover_20d": 15111584100.0,
       "chart": {
         "from": "2026-08-24",
@@ -12221,13 +12221,13 @@
       },
       "sector_hits": 3,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 19000.0,
-      "margin_buy": 1525500.0,
-      "margin_ratio": 80.29,
-      "margin_sell_chg4w": 15.9,
-      "margin_sell_pl": 20.45,
-      "margin_score": 0
+      "margin_date": "2026-11-20",
+      "margin_sell": 24200.0,
+      "margin_buy": 1404600.0,
+      "margin_ratio": 58.04,
+      "margin_sell_chg4w": 122.0,
+      "margin_sell_pl": 16.95,
+      "margin_score": 2
     },
     {
       "code": "7717",
@@ -12641,12 +12641,12 @@
         "ld": []
       },
       "sector_hits": 1,
-      "margin_date": "2026-11-13",
-      "margin_sell": 23300.0,
-      "margin_buy": 526000.0,
-      "margin_ratio": 22.58,
-      "margin_sell_chg4w": 147.9,
-      "margin_sell_pl": 21.11,
+      "margin_date": "2026-11-20",
+      "margin_sell": 15800.0,
+      "margin_buy": 505400.0,
+      "margin_ratio": 31.99,
+      "margin_sell_chg4w": 51.9,
+      "margin_sell_pl": 21.34,
       "margin_score": 2
     },
     {
@@ -12678,7 +12678,7 @@
       "basic_number_hit": null,
       "quiet_volume": true,
       "price_score": 6,
-      "score": 8,
+      "score": 4,
       "avg_turnover_20d": 645238245.0,
       "chart": {
         "from": "2026-08-24",
@@ -13062,13 +13062,13 @@
       },
       "sector_hits": 3,
       "theme": true,
-      "margin_date": "2026-11-13",
-      "margin_sell": 300.0,
-      "margin_buy": 410900.0,
-      "margin_ratio": 1369.67,
-      "margin_sell_chg4w": 200.0,
+      "margin_date": "2026-11-20",
+      "margin_sell": 200.0,
+      "margin_buy": 390900.0,
+      "margin_ratio": 1954.5,
+      "margin_sell_chg4w": -50.0,
       "margin_sell_pl": 10.13,
-      "margin_score": 2
+      "margin_score": -2
     }
   ]
 }
